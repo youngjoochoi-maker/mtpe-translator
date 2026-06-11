@@ -1,0 +1,27 @@
+# 파이썬
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 가상환경 / 빌드 산출물
+.venv/
+venv/
+build-venv/
+build/
+dist/
+*.egg-info/
+
+# 앱/데이터 (재생성 가능하거나 사용자별)
+MTPE.app/
+works/
+out/
+_serverdata/
+
+# 비밀/로컬 설정
+.env
+
+# OS
+.DS_Store
+*.log
+.claude/settings.local.json
+.github/workflows/build-windows.yml

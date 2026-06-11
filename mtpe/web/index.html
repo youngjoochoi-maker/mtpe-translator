@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MTPE 번역 파이프라인</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --fg:#e6e8ee; --mut:#9aa3b2;
+          --accent:#4f8cff; --ok:#34c759; --run:#ffb020; --err:#ff5c5c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+  header { padding:16px 24px; border-bottom:1px solid var(--line); display:flex;
+           align-items:baseline; gap:12px; }
+  header h1 { font-size:18px; margin:0; }
+  header .sub { color:var(--mut); font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:20px 24px 60px;
+         display:grid; grid-template-columns:360px 1fr; gap:20px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em;
+              color:var(--mut); margin:0 0 12px; }
+  label { display:block; font-size:12px; color:var(--mut); margin:10px 0 4px; }
+  select, input[type=text], input[type=password] {
+    width:100%; background:#0d0f14; color:var(--fg); border:1px solid var(--line);
+    border-radius:7px; padding:8px 10px; font-size:13px; }
+  input[type=file] { width:100%; font-size:12px; color:var(--mut); }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:7px;
+           padding:9px 14px; font-size:13px; font-weight:600; cursor:pointer; }
+  button.sec { background:#222733; color:var(--fg); border:1px solid var(--line); }
+  button.sec.danger { color:#ff8b8b; border-color:#5a2330; }
+  button.sec.danger:hover { background:#3a1c22; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .keyrow { display:flex; gap:8px; align-items:flex-end; }
+  .keyrow > div:first-child { flex:1; }
+  .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px;
+          border:1px solid var(--line); color:var(--mut); }
+  .pill.ok { color:var(--ok); border-color:#1f5132; }
+  .pill.no { color:var(--err); border-color:#5a2330; }
+  .runbtn { width:100%; margin-top:14px; padding:12px; font-size:15px; }
+  .steps { display:flex; flex-direction:column; gap:10px; }
+  .step { border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+  .step > .head { display:flex; align-items:center; gap:10px; padding:10px 12px;
+                  cursor:pointer; background:#13161d; }
+  .step .dot { width:10px; height:10px; border-radius:50%; background:#3a4150; flex:0 0 auto; }
+  .step.run .dot { background:var(--run); animation:pulse 1s infinite; }
+  .step.done .dot { background:var(--ok); }
+  .step.err .dot { background:var(--err); }
+  @keyframes pulse { 50% { opacity:.3; } }
+  .step .name { font-weight:600; }
+  .step .meta { margin-left:auto; color:var(--mut); font-size:12px; }
+  .step .body { display:none; padding:12px; border-top:1px solid var(--line);
+                white-space:pre-wrap; word-break:break-word; max-height:340px; overflow:auto;
+                font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; color:#cfd6e4; }
+  .step.open .body { display:block; }
+  .final { margin-top:18px; }
+  .final textarea { width:100%; min-height:280px; background:#0d0f14; color:var(--fg);
+                    border:1px solid var(--line); border-radius:9px; padding:12px;
+                    font:13px/1.7 ui-monospace,Menlo,monospace; resize:vertical; }
+  .toolbar { display:flex; gap:8px; margin-top:8px; }
+  .hint { color:var(--mut); font-size:12px; margin-top:6px; }
+  .hint a { color:var(--accent); text-decoration:none; }
+  .hint a:hover { text-decoration:underline; }
+  .note { background:#1a1410; border:1px solid #3a2a16; color:#e7c89a;
+          padding:8px 10px; border-radius:7px; font-size:12px; margin-top:10px; }
+  .note.ok { background:#101a12; border-color:#1f5132; color:#9be8b0; }
+  /* tabs */
+  nav.tabs { margin-left:auto; display:flex; gap:4px; }
+  .tab { background:transparent; color:var(--mut); border:1px solid transparent;
+         padding:6px 14px; border-radius:8px; font-weight:600; }
+  .tab.active { background:#1c2230; color:var(--fg); border-color:var(--line); }
+  /* manage view */
+  #view-manage { display:none; grid-template-columns:1fr; }
+  .bar { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+  .bar > div { display:flex; flex-direction:column; }
+  .bar label { margin:0 0 4px; }
+  .bar select, .bar input[type=text] { width:auto; min-width:120px; }
+  .mstep { border:1px solid var(--line); border-radius:9px; margin-top:14px; }
+  .mstep .mhead { display:flex; gap:8px; align-items:center; padding:10px 12px;
+                  background:#13161d; border-radius:9px 9px 0 0; }
+  .mstep .mhead .sid { font-weight:700; color:var(--accent); white-space:nowrap; }
+  .mstep .mhead .s-name { flex:1; }
+  .mstep .mhead .s-del { flex:0 0 auto; }
+  .mfield { padding:10px 12px; border-top:1px solid var(--line); }
+  .flabel { font-size:12px; color:var(--fg); font-weight:600; margin-bottom:6px; }
+  .fhelp { color:var(--mut); font-weight:400; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .ckchip { display:inline-flex; align-items:center; gap:5px; background:#0d0f14;
+            border:1px solid var(--line); border-radius:999px; padding:4px 11px;
+            font-size:12px; cursor:pointer; user-select:none; }
+  .ckchip input, .ckline input { width:auto !important; }
+  .ckline { display:flex; align-items:center; gap:6px; font-size:12px; margin:5px 0; cursor:pointer; }
+  .ckline code { background:#0d0f14; padding:1px 4px; border-radius:4px; }
+  .inrow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .inSummary { font-size:13px; color:#cfd6e4; }
+  .linkbtn { background:transparent; border:0; color:var(--accent); cursor:pointer;
+             font-size:12px; padding:2px 4px; }
+  .advChips { margin-top:8px; }
+  /* 프롬프트 튜닝 */
+  .tunebar { margin:14px 0; padding:12px 14px; background:#13161d;
+             border:1px solid var(--line); border-radius:10px; }
+  .tunebar > b { color:var(--fg); }
+  .tuneResult { background:#0d0f14; border-top:1px solid var(--line) !important;
+                border-radius:0 0 9px 9px; }
+  .tuneResult .flabel { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .tuneOut { white-space:pre-wrap; word-break:break-word; max-height:260px; overflow:auto;
+             font:12px/1.6 ui-monospace,Menlo,monospace; color:#cfd6e4; margin-top:6px;
+             background:#0b0d12; border:1px solid var(--line); border-radius:7px; padding:10px; }
+  .tunePrompt { white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto;
+                font:11px/1.6 ui-monospace,Menlo,monospace; color:#93a0b8; margin-top:6px;
+                background:#0b0d12; border:1px dashed var(--line); border-radius:7px; padding:10px; }
+  .runbtn-sm { background:var(--accent); color:#fff; border:0; border-radius:7px;
+               padding:8px 14px; font-weight:600; cursor:pointer; }
+  .mgrid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .mstep textarea { width:100%; min-height:200px; border:1px solid var(--line); border-radius:8px;
+                    background:#0d0f14; color:#cfd6e4; padding:12px;
+                    font:12px/1.6 ui-monospace,Menlo,monospace; resize:vertical; }
+  .savebar { position:sticky; bottom:0; margin-top:16px; padding:12px;
+             background:var(--panel); border:1px solid var(--line); border-radius:10px;
+             display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .savebar .spacer { flex:1; }
+  .chk { width:auto !important; }
+  .legend { margin-top:12px; padding:12px 14px; background:#13161d; border:1px solid var(--line);
+            border-radius:9px; font-size:12px; color:var(--mut); line-height:1.9; }
+  .legend b { color:var(--fg); }
+  .legend > b { display:block; margin-bottom:4px; }
+  .legend code { background:#0d0f14; padding:1px 5px; border-radius:4px; color:#cfd6e4; }
+  .legend u { color:var(--accent); text-decoration:none; }
+  /* 라이브러리(회차/TB) */
+  .tbrow { display:flex; gap:8px; align-items:center; margin-top:6px; }
+  .tbrow input[type=text] { flex:1; }
+  .tbrow input[type=file] { flex:1; }
+  .tbrow button { flex:0 0 auto; }
+  .eplist-head { display:flex; align-items:center; gap:8px; margin-top:16px; }
+  .eplist-head a { color:var(--accent); font-size:12px; text-decoration:none; }
+  .eplist { margin-top:6px; max-height:240px; overflow:auto; border:1px solid var(--line);
+            border-radius:8px; }
+  .eprow { display:flex; align-items:center; gap:8px; padding:7px 10px;
+           border-bottom:1px solid var(--line); font-size:13px; }
+  .eprow:last-child { border-bottom:0; }
+  .eprow:hover { background:#13161d; }
+  .eprow input { width:auto; }
+  .eprow .org { margin-left:auto; font-size:11px; color:var(--mut);
+                border:1px solid var(--line); border-radius:999px; padding:1px 7px; }
+  .epdel { background:transparent; color:var(--mut); border:0; padding:2px 6px;
+           font-size:13px; cursor:pointer; border-radius:6px; }
+  .epdel:hover { background:#3a1c22; color:var(--err); }
+  .epblock { border:1px solid var(--line); border-radius:10px; margin-bottom:14px; }
+  .epblock > .ephead { display:flex; align-items:center; gap:10px; padding:10px 12px;
+                       background:#13161d; border-radius:10px 10px 0 0; }
+  .epblock .ephead .epname { font-weight:700; }
+  .epblock .ephead .epstat { margin-left:auto; font-size:12px; color:var(--mut); }
+  .epbody { padding:12px; }
+  #toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
+           background:#1c2230; border:1px solid var(--line); color:var(--fg);
+           padding:10px 16px; border-radius:8px; font-size:13px; opacity:0;
+           transition:opacity .2s; pointer-events:none; z-index:100; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>MTPE 번역 파이프라인</h1>
+  <span class="sub">작품·언어·버전별 5단계 프롬프트 체인</span>
+  <nav class="tabs">
+    <button class="tab active" data-view="translate">번역</button>
+    <button class="tab" data-view="manage">프롬프트 관리</button>
+  </nav>
+</header>
+<main id="view-translate">
+  <!-- 좌측: 설정 패널 -->
+  <section class="panel" id="controls">
+    <h2>1. 모델 & API 키</h2>
+    <label>모델</label>
+    <select id="modelSelect"></select>
+    <input type="text" id="modelCustom" placeholder="직접 입력 (LiteLLM 모델 문자열)"
+           style="display:none; margin-top:6px;" />
+
+    <div id="keyArea">
+      <div class="keyrow" style="margin-top:10px;">
+        <div>
+          <label>API 키 <span id="keyName" class="pill">-</span> <span id="keyStatus"></span></label>
+          <input type="password" id="keyValue" placeholder="키 입력 후 저장 (로컬 .env)" />
+        </div>
+        <button class="sec" id="saveKey">저장</button>
+      </div>
+      <div class="hint">키는 이 컴퓨터의 <code>.env</code> 에만 저장됩니다.</div>
+    </div>
+    <div id="keyManagedNote" class="note ok" style="display:none; margin-top:10px;">
+      🔒 회사 공용 키로 운영 중 — 키 입력 없이 바로 번역하면 됩니다.
+    </div>
+
+    <h2 style="margin-top:20px;">2. 작품 / 언어 / 버전</h2>
+    <div class="row">
+      <div><label>작품</label><select id="workSelect"></select></div>
+      <div><label>언어</label><select id="langSelect"></select></div>
+      <div><label>버전</label><select id="versionSelect"></select></div>
+    </div>
+
+    <h2 style="margin-top:20px;">3. 설정집 (TB)</h2>
+    <div class="tbrow"><span id="tbName" class="pill">없음</span>
+      <button type="button" class="epdel" id="tbDel" title="설정집 삭제" style="display:none;">✕</button>
+    </div>
+    <div class="tbrow">
+      <input type="file" id="tbFile" accept=".txt,.md,.docx,.xlsx" />
+      <button class="sec" id="tbUpload">업로드/교체</button>
+    </div>
+    <div class="hint">엑셀(.xlsx) 권장 — 인물·용어·호칭 등 <b>시트별로</b> 정리(txt/md/docx도 가능).
+      모든 시트가 AI에게 참고로 전달됩니다. 최신 1개만 유지(주차 업데이트 시 교체).</div>
+    <div class="hint"><a href="/api/tb-template" download>📄 양식 템플릿 내려받기 (.xlsx)</a> — 헤더·예시가 채워진 파일을 받아 그대로 작성하세요.</div>
+    <div id="tbSheets"></div>
+
+    <h2 style="margin-top:20px;">4. 회차 원문</h2>
+    <label>회차 폴더 경로 (선택)</label>
+    <div class="tbrow">
+      <input type="text" id="srcDir" placeholder="예: /Users/.../Downloads/장저견" />
+      <button class="sec" id="srcDirApply">적용</button>
+    </div>
+    <div class="tbrow">
+      <input type="file" id="epFile" accept=".txt,.md,.docx,.srt,.vtt" />
+      <button class="sec" id="epUpload">회차 추가</button>
+    </div>
+    <div class="eplist-head">
+      <label style="margin:0;">회차 선택 (<span id="epCount">0</span>)</label>
+      <a href="#" id="epAll">전체</a><a href="#" id="epNone">해제</a>
+    </div>
+    <div id="epList" class="eplist"><div class="hint" style="padding:10px;">작품을 선택하면 회차가 표시됩니다.</div></div>
+
+    <button class="runbtn" id="runBtn">▶ 선택 회차 번역 (<span id="runCount">0</span>)</button>
+    <div id="runNote" class="note" style="display:none;"></div>
+  </section>
+
+  <!-- 우측: 결과 -->
+  <section class="panel" id="results">
+    <h2>진행 상황</h2>
+    <div id="episodes"><div class="hint">왼쪽에서 회차를 선택하고 [번역]을 누르세요.</div></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<!-- 프롬프트 관리 뷰 -->
+<main id="view-manage">
+  <section class="panel">
+    <h2>프롬프트 세트 불러오기</h2>
+    <div class="hint" style="margin:-4px 0 12px;">
+      <b>번들(프롬프트 세트)</b> = 한 <b>작품</b> · 한 <b>언어</b> · 한 <b>버전</b>에 속한 <b>STEP1~5 프롬프트 한 벌</b>입니다.
+      예) <code>장저견 / zh-ko / v1</code>. 아래에서 골라 <b>[불러오기]</b> 하면 그 5단계 프롬프트를 편집할 수 있어요.
+    </div>
+    <div class="bar">
+      <div><label>작품</label><select id="mWork"></select></div>
+      <div><label>언어</label><select id="mLang"></select></div>
+      <div><label>버전</label><select id="mVersion"></select></div>
+      <div><button class="sec" id="mLoad">불러오기</button></div>
+      <div><button class="sec danger" id="mDelVer">이 버전 삭제</button></div>
+      <div><button class="sec" id="mNew">+ 새 작품/언어</button></div>
+    </div>
+    <div id="mNewBox" style="display:none; margin-top:10px;" class="bar">
+      <div><label>새 작품명</label><input type="text" id="mNewWork" placeholder="예: 대소저" /></div>
+      <div><label>새 언어쌍</label><input type="text" id="mNewLang" placeholder="예: zh-ko" /></div>
+      <div><label>버전</label><input type="text" id="mNewVer" placeholder="v1" /></div>
+      <div><button class="sec" id="mNewTemplate">빈 5단계 템플릿 만들기</button></div>
+    </div>
+
+    <h2 style="margin-top:18px;">이 세트 정보 <span class="fhelp" style="font-weight:400;">(불러온 번들의 기본 정보)</span></h2>
+    <div class="bar">
+      <div><label>원문 언어</label><input type="text" id="mSrcLang" style="width:120px;" /></div>
+      <div><label>목표 언어</label><input type="text" id="mTgtLang" style="width:120px;" /></div>
+      <div class="grow" style="flex:1;"><label>메모</label><input type="text" id="mNotes" style="width:100%;" /></div>
+    </div>
+
+    <div class="tunebar">
+      <b>🧪 시험 실행 (프롬프트 튜닝)</b>
+      <span class="fhelp">— 저장하지 않은 편집본으로 샘플 회차를 돌려, 각 단계 결과를 보고 프롬프트를 고칩니다</span>
+      <div class="bar" style="margin-top:8px;">
+        <div><label>샘플 회차</label><select id="tuneEpisode"></select></div>
+        <div><label>모델</label><select id="tuneModel"></select></div>
+        <div><button class="runbtn-sm" id="tuneRun">▶ 시험 실행 (전체)</button></div>
+        <div style="align-self:center;"><span id="tuneStatus" class="fhelp"></span></div>
+      </div>
+    </div>
+
+    <div id="mSteps"></div>
+    <div class="legend">
+      <b>읽는 법</b>
+      <div>각 단계는 <u>위에서 아래로 순서대로</u> 실행되고, <b>이전 단계 결과가 다음 단계로 자동으로 이어집니다.</b>
+        <b>① 입력 자료</b>는 기본이 <b>원문 · 설정집 · 이전 단계 결과</b>라 보통 그대로 두면 됩니다(요약만 보임).
+        특별히 다르게 엮고 싶을 때만 <b>[직접 고르기]</b>로 펼쳐 조정하세요.</div>
+      <div><b>④ 프롬프트 내용</b>은 형식 자유 — 마크다운으로 써도 되고 JSON을 넣어도 됩니다. 적은 그대로 저장됩니다.</div>
+      <div style="margin-top:6px;"><b>③ 출력 처리</b>는 거의 안 만져도 됩니다:</div>
+      <div>· <b><code>&lt;o&gt;…&lt;/o&gt;</code> 안만 추출</b> — AI에게 "답을 <code>&lt;o&gt;…&lt;/o&gt;</code>로 감싸라"고 시킨 단계(예: 1단계 JSON)에서만 켭니다.
+        켜면 그 태그 <u>안의 내용만</u> 뽑아 다음 단계로 넘겨 군더더기를 없앱니다.</div>
+      <div>· <b>완성본(최종)</b> — 어느 단계가 최종 번역물인지 표시. 보통 <u>마지막 단계 한 곳</u>에만 체크.</div>
+    </div>
+
+    <div class="savebar">
+      <span id="mTarget" class="pill">아직 불러온 세트 없음 — 위에서 골라 [불러오기]</span>
+      <span class="spacer"></span>
+      <button class="sec" id="mAddStep">+ 단계 추가</button>
+      <button class="sec" id="mSaveOver">현재 버전 덮어쓰기</button>
+      <button id="mSaveNew">새 버전으로 저장 (<span id="mNextVer">v?</span>)</button>
+    </div>
+    <div id="mMsg" class="note" style="display:none;"></div>
+  </section>
+</main>
+
+<script>
+let BUNDLES = [], MODELS = [], DEFAULTS = {}, KEYSTATUS = {};
+const $ = (id) => document.getElementById(id);
+
+function requiredKeyFor(model) {
+  const m = (model || "").toLowerCase();
+  const map = { claude:"ANTHROPIC_API_KEY", anthropic:"ANTHROPIC_API_KEY",
+    gpt:"OPENAI_API_KEY", o1:"OPENAI_API_KEY", o3:"OPENAI_API_KEY", gemini:"GEMINI_API_KEY" };
+  for (const p in map) if (m.startsWith(p)) return map[p];
+  return null;
+}
+function currentModel() {
+  const sel = $("modelSelect").value;
+  return sel === "__custom__" ? $("modelCustom").value.trim() : sel;
+}
+function refreshKeyUI() {
+  const env = requiredKeyFor(currentModel());
+  $("keyName").textContent = env || "-";
+  const ok = env && KEYSTATUS[env];
+  $("keyStatus").innerHTML = env
+    ? `<span class="pill ${ok ? "ok":"no"}">${ok ? "설정됨":"미설정"}</span>` : "";
+}
+
+async function bootstrap() {
+  const r = await fetch("/api/bootstrap");
+  if (r.status === 401) { location.href = "/login"; return; }
+  const d = await r.json();
+  BUNDLES = d.bundles; MODELS = d.models; DEFAULTS = d.defaults; KEYSTATUS = d.key_status;
+
+  // 회사 공용 키 운영: 키 입력 UI 숨기고, 키 검사 통과 처리
+  if (d.key_managed) {
+    $("keyArea").style.display = "none";
+    $("keyManagedNote").style.display = "block";
+    Object.keys(KEYSTATUS).forEach(k => KEYSTATUS[k] = true);
+  }
+
+  const ms = $("modelSelect");
+  ms.innerHTML = MODELS.map(m => `<option value="${m.model}">${m.label} — ${m.model}</option>`).join("")
+    + `<option value="__custom__">직접 입력…</option>`;
+  if (DEFAULTS.model && MODELS.some(m => m.model === DEFAULTS.model)) ms.value = DEFAULTS.model;
+
+  const ws = $("workSelect");
+  ws.innerHTML = BUNDLES.map(b => `<option>${b.work}</option>`).join("");
+  if (DEFAULTS.work) ws.value = DEFAULTS.work;
+  onWorkChange();
+  refreshKeyUI();
+  populateTuneModels();
+}
+function onWorkChange() {
+  const work = $("workSelect").value;
+  const b = BUNDLES.find(x => x.work === work);
+  const ls = $("langSelect");
+  ls.innerHTML = (b ? b.langs : []).map(l => `<option>${l.lang}</option>`).join("");
+  if (DEFAULTS.lang && b && b.langs.some(l => l.lang === DEFAULTS.lang)) ls.value = DEFAULTS.lang;
+  onLangChange();
+  loadLibrary();
+}
+function onLangChange() {
+  const work = $("workSelect").value, lang = $("langSelect").value;
+  const b = BUNDLES.find(x => x.work === work);
+  const l = b && b.langs.find(x => x.lang === lang);
+  const vs = $("versionSelect");
+  const vers = l ? l.versions : [];
+  vs.innerHTML = vers.map((v,i) => `<option value="${v}">${v}${i===0?" (최신)":""}</option>`).join("");
+}
+
+$("modelSelect").addEventListener("change", () => {
+  $("modelCustom").style.display = $("modelSelect").value === "__custom__" ? "block" : "none";
+  refreshKeyUI();
+});
+$("modelCustom").addEventListener("input", refreshKeyUI);
+$("workSelect").addEventListener("change", onWorkChange);
+$("langSelect").addEventListener("change", onLangChange);
+
+$("saveKey").addEventListener("click", async () => {
+  const env = requiredKeyFor(currentModel());
+  const val = $("keyValue").value.trim();
+  if (!env) return alert("모델을 먼저 선택하세요.");
+  if (!val) return alert("키를 입력하세요.");
+  const fd = new FormData(); fd.append("provider_key", env); fd.append("value", val);
+  const r = await fetch("/api/save-key", { method:"POST", body:fd });
+  const d = await r.json();
+  if (d.ok) { KEYSTATUS[env] = true; $("keyValue").value = ""; refreshKeyUI(); }
+  else alert("저장 실패: " + (d.error || ""));
+});
+
+/* ===== 자료 라이브러리 (회차 원문 + 설정집) ===== */
+let EPISODES = [];
+let _toastT = null;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(_toastT); _toastT = setTimeout(() => t.classList.remove("show"), 2200);
+}
+function isNativeApp() {
+  // 앱(pywebview) 창이면 true — blob 다운로드 금지(크래시 방지)
+  return !!window.pywebview;
+}
+async function downloadText(filename, text) {
+  // 네이티브 앱 창에서는 blob 다운로드가 WebKit 을 크래시시키므로 Python 저장 다이얼로그 사용
+  if (isNativeApp()) {
+    const api = window.pywebview.api;
+    if (!api || !api.save_file) {
+      toast("앱 저장 기능 준비 중 — 잠시 후 다시 시도하세요");
+      return;
+    }
+    try {
+      const r = await api.save_file(filename, text || "");
+      if (r && r.ok) toast("저장됨: " + r.path);
+      else if (r && r.cancelled) { /* 사용자가 취소 */ }
+      else toast("저장 실패: " + ((r && r.error) || ""));
+    } catch (e) { toast("저장 실패: " + e); }
+    return;
+  }
+  // 브라우저: 일반 다운로드
+  try {
+    const blob = new Blob([text || ""], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename; document.body.appendChild(a); a.click();
+    a.remove(); URL.revokeObjectURL(a.href);
+  } catch (e) { toast("다운로드 실패: " + e); }
+}
+async function copyText(text) {
+  if (isNativeApp() && window.pywebview.api && window.pywebview.api.copy_text) {
+    try { await window.pywebview.api.copy_text(text || ""); toast("복사됨"); return; }
+    catch (e) { /* 아래로 폴백 */ }
+  }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text || ""); toast("복사됨"); return;
+    }
+  } catch (e) { /* 폴백 */ }
+  // 최후 폴백: 숨은 textarea + execCommand
+  try {
+    const ta = document.createElement("textarea"); ta.value = text || "";
+    ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy"); ta.remove(); toast("복사됨");
+  } catch (e) { toast("복사 실패"); }
+}
+function updateRunCount() {
+  const n = [...document.querySelectorAll("#epList .epchk:checked")].length;
+  $("runCount").textContent = n;
+}
+async function loadLibrary() {
+  const work = $("workSelect").value;
+  if (!work) return;
+  const d = await (await fetch(`/api/library?work=${encodeURIComponent(work)}`)).json();
+  EPISODES = d.episodes || [];
+  $("srcDir").value = d.source_dir || "";
+  $("tbName").textContent = d.tb ? d.tb.name : "없음";
+  $("tbName").className = "pill" + (d.tb ? " ok" : "");
+  $("tbDel").style.display = d.tb ? "inline-block" : "none";
+  renderTbSheets(d.tb);
+  $("epCount").textContent = EPISODES.length;
+  const box = $("epList");
+  if (!EPISODES.length) {
+    box.innerHTML = `<div class="hint" style="padding:10px;">회차가 없습니다. 폴더 경로를 지정하거나 회차를 업로드하세요.</div>`;
+  } else {
+    box.innerHTML = EPISODES.map(e => {
+      const v = e.id.replace(/"/g,'&quot;');
+      const del = e.origin === "업로드"
+        ? `<button type="button" class="epdel" data-id="${v}" title="업로드 회차 삭제">✕</button>` : "";
+      return `<label class="eprow">
+        <input type="checkbox" class="epchk" value="${v}">
+        <span>${e.name}</span><span class="org">${e.origin}</span>${del}
+      </label>`;
+    }).join("");
+    box.querySelectorAll(".epchk").forEach(c => c.addEventListener("change", updateRunCount));
+    box.querySelectorAll(".epdel").forEach(b => b.addEventListener("click", async (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      const id = b.dataset.id;
+      if (!confirm(`업로드한 회차 '${id}' 를 삭제할까요?`)) return;
+      const r = await fetch(`/api/library/episode?work=${encodeURIComponent($("workSelect").value)}&episode=${encodeURIComponent(id)}`, { method:"DELETE" });
+      const d = await r.json();
+      if (d.ok === false) return alert(d.error || "삭제 실패");
+      await loadLibrary(); toast(`'${id}' 삭제됨`);
+    }));
+  }
+  updateRunCount();
+}
+function renderTbSheets(tb) {
+  const box = $("tbSheets");
+  if (!tb || !tb.sheets || !tb.sheets.length) { box.innerHTML = ""; return; }
+  const sel = new Set(tb.selected || tb.sheets);
+  box.innerHTML =
+    `<div class="flabel" style="margin-top:10px;">AI에 보낼 시트 선택 <span class="fhelp">(작품마다 시트가 다를 수 있어요 — 체크한 시트만 전달)</span></div>`
+    + `<div class="chips">` + tb.sheets.map(s => {
+        const v = s.replace(/"/g,'&quot;');
+        return `<label class="ckchip"><input type="checkbox" class="tb-sheet" value="${v}" ${sel.has(s)?"checked":""}> ${s}</label>`;
+      }).join("") + `</div>`;
+  box.querySelectorAll(".tb-sheet").forEach(c => c.addEventListener("change", saveTbSheets));
+}
+async function saveTbSheets() {
+  const sheets = [...document.querySelectorAll('#tbSheets .tb-sheet:checked')].map(c => c.value);
+  await fetch("/api/library/tb-sheets", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ work: $("workSelect").value, sheets }),
+  });
+  toast(`시트 ${sheets.length}개 사용`);
+}
+
+$("srcDirApply").addEventListener("click", async () => {
+  const fd = new FormData();
+  fd.append("work", $("workSelect").value);
+  fd.append("path", $("srcDir").value.trim());
+  const d = await (await fetch("/api/library/source-dir", { method:"POST", body:fd })).json();
+  if (d.ok === false) return alert(d.error || "적용 실패");
+  loadLibrary();
+});
+$("epUpload").addEventListener("click", async () => {
+  const f = $("epFile").files[0];
+  if (!f) return alert("추가할 회차 파일을 선택하세요.");
+  const fd = new FormData(); fd.append("work", $("workSelect").value); fd.append("file", f);
+  const d = await (await fetch("/api/library/episode", { method:"POST", body:fd })).json();
+  if (d.ok === false) return alert(d.error || "업로드 실패");
+  $("epFile").value = ""; loadLibrary();
+});
+$("tbUpload").addEventListener("click", async () => {
+  const f = $("tbFile").files[0];
+  if (!f) return alert("설정집 파일을 선택하세요.");
+  const fd = new FormData(); fd.append("work", $("workSelect").value); fd.append("file", f);
+  const d = await (await fetch("/api/library/tb", { method:"POST", body:fd })).json();
+  if (d.ok === false) return alert(d.error || "업로드 실패");
+  $("tbFile").value = ""; loadLibrary();
+});
+$("tbDel").addEventListener("click", async () => {
+  if (!confirm("현재 설정집을 삭제할까요?")) return;
+  const r = await fetch(`/api/library/tb?work=${encodeURIComponent($("workSelect").value)}`, { method:"DELETE" });
+  const d = await r.json();
+  if (d.ok === false) return alert(d.error || "삭제 실패");
+  await loadLibrary(); toast("설정집 삭제됨");
+});
+$("epAll").addEventListener("click", (e) => { e.preventDefault();
+  document.querySelectorAll("#epList .epchk").forEach(c => c.checked = true); updateRunCount(); });
+$("epNone").addEventListener("click", (e) => { e.preventDefault();
+  document.querySelectorAll("#epList .epchk").forEach(c => c.checked = false); updateRunCount(); });
+
+/* ===== 회차 번역 실행 (선택 회차 순차) ===== */
+function epBlock(eid, idx, total, steps) {
+  const el = document.createElement("div");
+  el.className = "epblock"; el.id = "ep-" + cssEsc(eid);
+  el.innerHTML = `
+    <div class="ephead"><span class="epname">${eid}</span>
+      <span class="epstat">${idx+1}/${total} 진행 중…</span></div>
+    <div class="epbody"><div class="steps"></div></div>`;
+  const sb = el.querySelector(".steps");
+  steps.forEach(s => {
+    const se = document.createElement("div");
+    se.className = "step"; se.dataset.sid = s.id;
+    se.innerHTML = `<div class="head"><span class="dot"></span>
+      <span class="name">STEP${s.id} · ${s.name}</span><span class="meta"></span></div>
+      <div class="body"></div>`;
+    se.querySelector(".head").addEventListener("click", () => se.classList.toggle("open"));
+    sb.appendChild(se);
+  });
+  return el;
+}
+function cssEsc(s){ return s.replace(/[^a-zA-Z0-9_-]/g, c => "_" + c.charCodeAt(0)); }
+
+$("runBtn").addEventListener("click", async () => {
+  const eids = [...document.querySelectorAll("#epList .epchk:checked")].map(c => c.value);
+  if (!eids.length) return alert("번역할 회차를 선택하세요.");
+  const model = currentModel();
+  if (!model) return alert("모델을 선택/입력하세요.");
+  const env = requiredKeyFor(model);
+  if (env && !KEYSTATUS[env]) {
+    $("runNote").style.display = "block";
+    $("runNote").textContent = `${env} 가 미설정입니다. 위에서 키를 저장한 뒤 다시 시도하세요.`;
+    return;
+  }
+  $("runNote").style.display = "none";
+  $("runBtn").disabled = true; $("runBtn").textContent = "번역 중…";
+  $("episodes").innerHTML = "";
+
+  const body = JSON.stringify({
+    work: $("workSelect").value, lang: $("langSelect").value,
+    version: $("versionSelect").value, model, episodes: eids,
+  });
+  try {
+    const resp = await fetch("/api/run", {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body });
+    const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream:true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (line) handleRun(JSON.parse(line));
+      }
+    }
+  } catch (e) {
+    alert("요청 실패: " + e.message);
+  } finally {
+    $("runBtn").disabled = false; $("runBtn").innerHTML = `▶ 선택 회차 번역 (<span id="runCount">${eids.length}</span>)`;
+  }
+});
+
+let curStep = null;
+function handleRun(ev) {
+  if (ev.type === "run_start") {
+    // 안내만
+  } else if (ev.type === "episode_start") {
+    const block = epBlock(ev.episode, ev.index, ev.total, ev.steps);
+    $("episodes").appendChild(block);
+    const first = block.querySelector(".step");
+    if (first) first.classList.add("run");
+    curStep = first;
+    block.scrollIntoView({ behavior:"smooth", block:"nearest" });
+  } else if (ev.type === "step") {
+    const block = $("ep-" + cssEsc(ev.episode));
+    const el = block.querySelector(`.step[data-sid="${ev.id}"]`);
+    el.classList.add("done"); el.classList.remove("run");
+    el.querySelector(".meta").textContent = `${ev.model} · ${ev.chars}자`;
+    el.querySelector(".body").textContent = ev.output;
+    const next = el.nextElementSibling;
+    if (next && next.classList.contains("step")) next.classList.add("run");
+  } else if (ev.type === "episode_final") {
+    const block = $("ep-" + cssEsc(ev.episode));
+    block.querySelector(".epstat").textContent = "완료 ✓";
+    const fin = document.createElement("div");
+    fin.className = "final";
+    fin.innerHTML = `<h2 style="margin-top:14px;">최종 결과</h2>
+      <textarea spellcheck="false"></textarea>
+      <div class="toolbar"><button class="sec b-copy">복사</button>
+      <button class="sec b-dl">다운로드</button></div>`;
+    fin.querySelector("textarea").value = ev.output;
+    fin.querySelector(".b-copy").addEventListener("click", () => copyText(ev.output));
+    fin.querySelector(".b-dl").addEventListener("click", () =>
+      downloadText(`${$("workSelect").value}_${ev.episode.replace(/\.[^.]+$/,"")}.txt`, ev.output));
+    block.querySelector(".epbody").appendChild(fin);
+  } else if (ev.type === "episode_error") {
+    const block = $("ep-" + cssEsc(ev.episode));
+    if (block) block.querySelector(".epstat").textContent = "오류: " + ev.message;
+    else { $("runNote").style.display="block"; $("runNote").textContent = `${ev.episode}: ${ev.message}`; }
+  } else if (ev.type === "all_done") {
+    // 끝
+  } else if (ev.type === "error") {
+    $("runNote").style.display = "block"; $("runNote").textContent = "오류: " + ev.message;
+  }
+}
+
+/* ===== 탭 전환 ===== */
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  const v = t.dataset.view;
+  $("view-translate").style.display = v === "translate" ? "grid" : "none";
+  $("view-manage").style.display = v === "manage" ? "grid" : "none";
+  if (v === "manage") { mPopulateWorks(); populateTuneModels(); populateTuneEpisodes(); }
+}));
+
+/* ===== 프롬프트 관리 ===== */
+let mState = { work:null, lang:null, version:null };
+
+function mPopulateWorks() {
+  const ws = $("mWork");
+  const cur = ws.value;
+  ws.innerHTML = BUNDLES.map(b => `<option>${b.work}</option>`).join("");
+  if (cur && BUNDLES.some(b => b.work === cur)) ws.value = cur;
+  mOnWork();
+}
+function mOnWork() {
+  const b = BUNDLES.find(x => x.work === $("mWork").value);
+  $("mLang").innerHTML = (b ? b.langs : []).map(l => `<option>${l.lang}</option>`).join("");
+  mOnLang();
+}
+function mOnLang() {
+  const b = BUNDLES.find(x => x.work === $("mWork").value);
+  const l = b && b.langs.find(x => x.lang === $("mLang").value);
+  $("mVersion").innerHTML = (l ? l.versions : [])
+    .map((v,i) => `<option value="${v}">${v}${i===0?" (최신)":""}</option>`).join("");
+}
+$("mWork").addEventListener("change", mOnWork);
+$("mLang").addEventListener("change", mOnLang);
+
+$("mNew").addEventListener("click", () => {
+  const box = $("mNewBox");
+  box.style.display = box.style.display === "none" ? "flex" : "none";
+});
+
+// 이 단계에 넣을 수 있는 자료(체크박스). idx 는 0-기준 단계 위치.
+function inputOptions(idx) {
+  const opts = [{ key:"source", label:"원문" }, { key:"glossary", label:"설정집(TB)" }];
+  for (let k = 1; k <= idx; k++) opts.push({ key:"step"+k, label:k+"단계 결과" });
+  return opts;
+}
+function esc(v){ return String(v||"").replace(/"/g,'&quot;'); }
+function inputSummaryText(inputs) {
+  const map = { source:"원문", glossary:"설정집" };
+  const parts = (inputs||[]).map(k =>
+    map[k] || (/^step(\d+)$/.test(k) ? k.replace("step","")+"단계 결과" : k));
+  return parts.length ? parts.join(" · ") : "(없음)";
+}
+function updateCardSummary(el) {
+  const inputs = [...el.querySelectorAll('.s-in:checked')].map(c=>c.value);
+  el.querySelector('.inSummary').textContent = inputSummaryText(inputs);
+}
+
+function stepCard(s, idx) {
+  const sel = new Set(Array.isArray(s.inputs) ? s.inputs : []);
+  const chips = inputOptions(idx).map(o =>
+    `<label class="ckchip"><input type="checkbox" class="s-in" value="${o.key}" ${sel.has(o.key)?"checked":""}> ${o.label}</label>`
+  ).join("") || `<span class="fhelp">선택할 자료 없음(1단계라 이전 결과가 없음)</span>`;
+
+  const el = document.createElement("div");
+  el.className = "mstep";
+  el.innerHTML = `
+    <div class="mhead">
+      <span class="sid">${idx+1}단계</span>
+      <input type="text" class="s-name" placeholder="단계 이름 (예: 초벌 번역)" value="${esc(s.name)}">
+      <button class="sec s-del" type="button">이 단계 삭제</button>
+    </div>
+    <div class="mfield">
+      <div class="flabel">① 입력 자료 <span class="fhelp">— 이 단계 프롬프트 뒤에 자동으로 붙는 자료</span></div>
+      <div class="inrow">
+        <span class="inSummary">${inputSummaryText(Array.isArray(s.inputs)?s.inputs:[])}</span>
+        <button type="button" class="linkbtn toggleAdv">직접 고르기 ▾</button>
+      </div>
+      <div class="advChips" style="display:none;"><div class="chips s-inputs">${chips}</div></div>
+    </div>
+    <div class="mfield mgrid">
+      <div>
+        <div class="flabel">② 사용 모델 <span class="fhelp">— 비우면 번역 화면에서 고른 기본 모델</span></div>
+        <input type="text" class="s-model" placeholder="비워두기 (기본 모델 사용)" value="${esc(s.model)}">
+      </div>
+      <div>
+        <div class="flabel">③ 출력 처리 <span class="fhelp">(대부분 끄고/한 곳만 — 안 만져도 됨)</span></div>
+        <label class="ckline" title="AI에게 답을 <o>…</o>로 감싸라고 지시한 단계에서만 켜세요. 켜면 <o>와 </o> 사이의 내용만 뽑아 다음 단계로 넘깁니다."><input type="checkbox" class="s-extract" ${s.extract==="tag:o"?"checked":""}> <span>AI 답변에서 <code>&lt;o&gt;…&lt;/o&gt;</code> 안만 추출 <span class="fhelp">(JSON 감싼 단계만)</span></span></label>
+        <label class="ckline" title="여러 단계 중 완성된 번역물이 나오는 단계 한 곳에 체크. 번역 화면의 최종 결과/다운로드가 이 단계 출력이 됩니다."><input type="checkbox" class="s-final" ${s.final?"checked":""}> <span>이 단계를 <b>완성본(최종 번역)</b>으로 <span class="fhelp">(마지막 단계 1곳)</span></span></label>
+      </div>
+    </div>
+    <div class="mfield">
+      <div class="flabel">④ 프롬프트 내용 <span class="fhelp">— AI에게 줄 지시문. 마크다운·JSON 등 형식 자유</span></div>
+      <textarea class="s-content" placeholder="이 단계의 지시문을 입력하세요. (마크다운이든 JSON이든 그대로 붙여넣어도 됩니다)"></textarea>
+    </div>
+    <div class="mfield tuneResult" style="display:none;">
+      <div class="flabel">🧪 이 단계 결과 <span class="t-meta fhelp"></span>
+        <button type="button" class="linkbtn t-rerun">↻ 이 단계부터 다시</button>
+        <button type="button" class="linkbtn t-showprompt">실제 보낸 프롬프트 보기</button>
+      </div>
+      <div class="tuneOut"></div>
+      <div class="tunePrompt" style="display:none;"></div>
+    </div>`;
+  el.querySelector(".s-content").value = s.content || "";
+  el.querySelector(".s-del").addEventListener("click", () => {
+    const steps = collectSteps(); steps.splice(idx, 1); renderSteps(steps);
+  });
+  el.querySelectorAll(".s-in").forEach(c =>
+    c.addEventListener("change", () => updateCardSummary(el)));
+  el.querySelector(".toggleAdv").addEventListener("click", () => {
+    const adv = el.querySelector(".advChips");
+    const show = adv.style.display === "none";
+    adv.style.display = show ? "block" : "none";
+    el.querySelector(".toggleAdv").textContent = show ? "접기 ▴" : "직접 고르기 ▾";
+  });
+  el.querySelector(".t-rerun").addEventListener("click", () => runTune(idx + 1));
+  el.querySelector(".t-showprompt").addEventListener("click", () => {
+    const p = el.querySelector(".tunePrompt");
+    const show = p.style.display === "none";
+    p.style.display = show ? "block" : "none";
+    el.querySelector(".t-showprompt").textContent = show ? "프롬프트 숨기기" : "실제 보낸 프롬프트 보기";
+  });
+  return el;
+}
+function collectSteps() {
+  return [...document.querySelectorAll("#mSteps .mstep")].map((el, i) => ({
+    name: el.querySelector(".s-name").value.trim() || `${i+1}단계`,
+    inputs: [...el.querySelectorAll(".s-in:checked")].map(c => c.value),
+    model: el.querySelector(".s-model").value.trim(),
+    extract: el.querySelector(".s-extract").checked ? "tag:o" : "",
+    final: el.querySelector(".s-final").checked,
+    content: el.querySelector(".s-content").value,
+  }));
+}
+function renderSteps(steps) {
+  const box = $("mSteps"); box.innerHTML = "";
+  steps.forEach((s, i) => box.appendChild(stepCard(s, i)));
+}
+
+async function mLoadBundle(work, lang, version) {
+  const r = await fetch(`/api/bundle?work=${encodeURIComponent(work)}&lang=${encodeURIComponent(lang)}&version=${encodeURIComponent(version)}`);
+  if (!r.ok) { mMsg("불러오기 실패", false); return; }
+  const d = await r.json();
+  mState = { work:d.work, lang:d.lang, version:d.version };
+  $("mSrcLang").value = d.source_lang; $("mTgtLang").value = d.target_lang;
+  $("mNotes").value = d.notes || "";
+  renderSteps(d.steps);
+  $("mTarget").textContent = `편집 중: ${d.work} / ${d.lang} / ${d.version} — STEP1~${d.steps.length} 프롬프트`;
+  await mRefreshNextVer();
+  tuneOutputs = {}; tunePrompts = {};
+  populateTuneEpisodes();
+  mMsg("", null);
+}
+$("mLoad").addEventListener("click", () => {
+  if (!$("mWork").value) return;
+  mLoadBundle($("mWork").value, $("mLang").value, $("mVersion").value);
+});
+$("mDelVer").addEventListener("click", async () => {
+  const work = $("mWork").value, lang = $("mLang").value, version = $("mVersion").value;
+  if (!work || !lang || !version) return alert("삭제할 작품/언어/버전을 선택하세요.");
+  if (!confirm(`'${work} / ${lang} / ${version}' 버전을 삭제할까요?\n저장된 프롬프트가 사라지며 되돌릴 수 없습니다.`)) return;
+  const r = await fetch(`/api/bundle?work=${encodeURIComponent(work)}&lang=${encodeURIComponent(lang)}&version=${encodeURIComponent(version)}`, { method:"DELETE" });
+  const d = await r.json();
+  if (d.ok === false) return alert(d.error || "삭제 실패");
+  toast(`${version} 버전 삭제됨`);
+  // 편집 중이던 버전을 삭제했으면 편집기 비우기
+  if (mState.work === work && mState.lang === lang && mState.version === version) {
+    $("mSteps").innerHTML = ""; mState = { work:null, lang:null, version:null };
+    $("mTarget").textContent = "아직 불러온 세트 없음 — 위에서 골라 [불러오기]"; $("mNextVer").textContent = "v?";
+  }
+  await refreshBundles();   // 번역 탭 드롭다운 갱신
+  mPopulateWorks();         // 관리 탭 드롭다운 갱신
+});
+
+$("mNewTemplate").addEventListener("click", () => {
+  const work = $("mNewWork").value.trim(), lang = $("mNewLang").value.trim();
+  const ver = $("mNewVer").value.trim() || "v1";
+  if (!work || !lang) return alert("새 작품명과 언어쌍을 입력하세요.");
+  // 기본: 1단계는 원문+설정집, 이후 단계는 원문+설정집+직전 단계 결과(자동 연결)
+  const names = ["1단계","2단계","3단계","4단계","5단계"];
+  const tpl = names.map((nm, i) => ({
+    id: i+1, name: nm,
+    inputs: i === 0 ? ["source","glossary"] : ["source","glossary","step"+i],
+    final: i === names.length-1, model:"", extract:"", content:"",
+  }));
+  mState = { work, lang, version:ver };
+  $("mSrcLang").value = "auto"; $("mTgtLang").value = "한국어"; $("mNotes").value = "";
+  renderSteps(tpl);
+  $("mTarget").textContent = `새 세트 작성 중: ${work} / ${lang} / ${ver} (아직 저장 안 됨)`;
+  $("mNextVer").textContent = ver;
+  $("mNewBox").style.display = "none";
+  tuneOutputs = {}; tunePrompts = {};
+  populateTuneEpisodes();
+});
+
+$("mAddStep").addEventListener("click", () => {
+  const steps = collectSteps();
+  const idx = steps.length;  // 새 단계의 0-기준 위치
+  // 기본: 원문·설정집·직전 단계 결과를 자동으로 받음
+  const inputs = idx >= 1 ? ["source","glossary","step"+idx] : ["source","glossary"];
+  steps.push({ name:"", inputs, content:"" });
+  renderSteps(steps);
+});
+
+function collectPayload(version) {
+  const steps = collectSteps().map((s, i) => ({ id: i + 1, ...s }));
+  return {
+    work: mState.work, lang: mState.lang, version,
+    source_lang: $("mSrcLang").value.trim() || "auto",
+    target_lang: $("mTgtLang").value.trim() || "한국어",
+    notes: $("mNotes").value.trim(),
+    steps,
+  };
+}
+async function mSave(version) {
+  if (!mState.work) return alert("먼저 번들을 불러오거나 새로 만드세요.");
+  if (!document.querySelectorAll("#mSteps .mstep").length) return alert("단계가 없습니다.");
+  const r = await fetch("/api/bundle/save", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(collectPayload(version)),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    mState.version = d.version;
+    mMsg(`저장됨: ${d.work} / ${d.lang} / ${d.version}`, true);
+    $("mTarget").textContent = `편집 중: ${d.work} / ${d.lang} / ${d.version} — STEP1~${document.querySelectorAll('#mSteps .mstep').length} 프롬프트`;
+    await refreshBundles();
+    mPopulateWorks();
+    await mRefreshNextVer();
+  } else {
+    mMsg("저장 실패: " + (d.error || ""), false);
+  }
+}
+$("mSaveOver").addEventListener("click", () => {
+  if (!mState.version) return alert("대상 버전이 없습니다.");
+  if (confirm(`${mState.work}/${mState.lang}/${mState.version} 를 덮어쓸까요?`)) mSave(mState.version);
+});
+$("mSaveNew").addEventListener("click", async () => {
+  const v = $("mNextVer").textContent.trim();
+  mSave(v);
+});
+
+async function mRefreshNextVer() {
+  if (!mState.work) { $("mNextVer").textContent = "v?"; return; }
+  const r = await fetch(`/api/bundle/next-version?work=${encodeURIComponent(mState.work)}&lang=${encodeURIComponent(mState.lang)}`);
+  if (r.ok) $("mNextVer").textContent = (await r.json()).version;
+}
+function mMsg(text, ok) {
+  const el = $("mMsg");
+  if (!text) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.className = "note" + (ok ? " ok" : "");
+  el.textContent = text;
+}
+
+/* ===== 프롬프트 튜닝 (시험 실행) ===== */
+let tuneOutputs = {};   // {단계id: 출력}
+let tunePrompts = {};   // {단계id: 보낸 프롬프트}
+
+function populateTuneModels() {
+  const sel = $("tuneModel");
+  if (!sel) return;
+  sel.innerHTML = (MODELS || []).map(m => `<option value="${m.model}">${m.label}</option>`).join("");
+  sel.value = "mock";
+}
+async function populateTuneEpisodes() {
+  const sel = $("tuneEpisode");
+  if (!sel) return;
+  if (!mState.work) { sel.innerHTML = `<option value="">(세트를 먼저 불러오세요)</option>`; return; }
+  try {
+    const d = await (await fetch(`/api/library?work=${encodeURIComponent(mState.work)}`)).json();
+    const eps = d.episodes || [];
+    sel.innerHTML = eps.length
+      ? eps.map(e => `<option value="${e.id.replace(/"/g,'&quot;')}">${e.name}</option>`).join("")
+      : `<option value="">(회차 없음 — 번역 탭에서 업로드)</option>`;
+  } catch (e) { sel.innerHTML = `<option value="">(불러오기 실패)</option>`; }
+}
+function cardByStepId(id) { return document.querySelectorAll('#mSteps .mstep')[id - 1]; }
+
+async function runTune(fromStep = 0) {
+  if (!mState.work) return alert("먼저 프롬프트 세트를 불러오거나 새로 만드세요.");
+  const episode = $("tuneEpisode").value;
+  if (!episode) return alert("샘플 회차를 선택하세요. (번역 탭에서 회차를 업로드/폴더지정)");
+  const steps = collectSteps().map((s, i) => ({ id: i + 1, ...s }));
+  const seed = {};
+  if (fromStep) for (let k = 1; k < fromStep; k++) if (tuneOutputs[k] != null) seed["step" + k] = tuneOutputs[k];
+  const payload = {
+    work: mState.work, lang: mState.lang, version: mState.version,
+    model: $("tuneModel").value, episode,
+    source_lang: $("mSrcLang").value, target_lang: $("mTgtLang").value,
+    steps, from_step: fromStep, seed,
+  };
+  $("tuneStatus").textContent = fromStep ? `${fromStep}단계부터 실행 중…` : "전체 실행 중…";
+  $("tuneRun").disabled = true;
+  try {
+    const r = await fetch("/api/tune", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true }); let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (line) handleTune(JSON.parse(line));
+      }
+    }
+  } catch (e) { $("tuneStatus").textContent = "오류: " + e.message; }
+  finally { $("tuneRun").disabled = false; }
+}
+function handleTune(ev) {
+  if (ev.type === "step") {
+    tuneOutputs[ev.id] = ev.output; tunePrompts[ev.id] = ev.prompt || "";
+    const card = cardByStepId(ev.id); if (!card) return;
+    card.querySelector(".tuneResult").style.display = "block";
+    card.querySelector(".t-meta").textContent = `${ev.model} · ${ev.chars}자`;
+    card.querySelector(".tuneOut").textContent = ev.output;
+    card.querySelector(".tunePrompt").textContent = ev.prompt || "";
+  } else if (ev.type === "done") {
+    $("tuneStatus").textContent = "완료 ✓";
+  } else if (ev.type === "error") {
+    $("tuneStatus").textContent = "오류: " + ev.message;
+  }
+}
+$("tuneRun").addEventListener("click", () => runTune(0));
+
+async function refreshBundles() {
+  const d = await (await fetch("/api/bootstrap")).json();
+  BUNDLES = d.bundles;
+  // 번역 탭 셀렉트도 갱신(현재 선택 유지 시도)
+  const w = $("workSelect").value;
+  $("workSelect").innerHTML = BUNDLES.map(b => `<option>${b.work}</option>`).join("");
+  if (BUNDLES.some(b => b.work === w)) $("workSelect").value = w;
+  onWorkChange();
+}
+
+bootstrap();
+</script>
+</body>
+</html>

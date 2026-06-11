@@ -1,0 +1,43 @@
+work: 장저견
+lang: zh-ko
+version: v1
+source_lang: 중국어
+target_lang: 한국어
+notes: 초기 버전. STEP1=번역핵심정보 추출(JSON), STEP2=결과유도형 분석,STEP3=초벌 번역, STEP4=오류패턴/개선기준,
+  STEP5=최종 교열.
+steps:
+- id: 1
+  name: 번역핵심정보 추출
+  file: step1.txt
+  inputs:
+  - source
+  - glossary
+  extract: tag:o
+- id: 2
+  name: 결과유도형 분석
+  file: step2.txt
+  inputs:
+  - source
+  - glossary
+- id: 3
+  name: 초벌 번역
+  file: step3.txt
+  inputs:
+  - source
+  - step2
+- id: 4
+  name: 오류패턴·개선기준
+  file: step4.txt
+  inputs:
+  - source
+  - step2
+  - step3
+- id: 5
+  name: 최종 교열
+  file: step5.txt
+  inputs:
+  - source
+  - step2
+  - step3
+  - step4
+  output: final

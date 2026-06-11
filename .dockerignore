@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+works/
+out/
+MTPE.app/
+.git/
+.DS_Store
+*.log

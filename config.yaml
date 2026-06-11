@@ -1,0 +1,34 @@
+# ── MTPE 번역 파이프라인 전역 설정 ────────────────────────────
+# 프롬프트는 작품별·언어별·버전별 번들로 관리한다:
+#   prompts/<작품>/<언어쌍>/<버전>/  (step1~5.txt + meta.yaml)
+# 버전 미지정 시 최신 버전을 자동 선택한다.
+
+prompts_root: prompts
+
+# 기본 선택 (CLI --work/--lang/--version 으로 덮어쓸 수 있음)
+default_work: 장저견
+default_lang: zh-ko
+default_version: null        # null => 최신(latest) 버전 자동 선택
+
+# ── 모델 (LiteLLM 모델 문자열, 모든 LLM 선택 가능) ──
+#   Anthropic : claude-opus-4-8 / claude-sonnet-4-6 / claude-haiku-4-5-20251001
+#   OpenAI    : gpt-4o / gpt-4.1 / o3 ...   Google: gemini/gemini-2.5-pro
+# API 키는 환경변수: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
+default_model: claude-opus-4-8
+temperature: 0.3
+max_tokens: 8192
+
+# 모든 단계 공통 시스템 프롬프트
+system_prompt: |
+  당신은 전문 번역 엔진입니다. 각 단계의 지시사항을 정확히 따르고,
+  요청된 산출물만 출력하세요. (지시에 출력 형식이 명시되면 그 형식을 따릅니다.)
+
+# 입력 자료 자동 첨부 시 사용할 한국어 라벨 (step* 키는 번들 단계 수에 맞게 사용)
+input_labels:
+  source: 원문
+  glossary: 설정집(TB)
+  step1: STEP 1 분석(JSON)
+  step2: STEP 2 분석
+  step3: STEP 3 번역본
+  step4: STEP 4 개선 기준
+  step5: STEP 5 최종본

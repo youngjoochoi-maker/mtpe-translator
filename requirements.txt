@@ -1,0 +1,9 @@
+litellm>=1.40.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
+PyYAML>=6.0
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+itsdangerous>=2.1.0   # 로그인 세션(SessionMiddleware)
+pywebview>=5.0   ; platform_system != "Linux"   # 데스크톱 앱 네이티브 창(win/mac; 없으면 브라우저로 대체)

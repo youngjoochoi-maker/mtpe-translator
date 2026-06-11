@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mtpe-web",
+      "runtimeExecutable": "./.venv/bin/python",
+      "runtimeArgs": ["-m", "mtpe.server"],
+      "port": 8000
+    }
+  ]
+}
