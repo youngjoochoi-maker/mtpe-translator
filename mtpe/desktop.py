@@ -98,6 +98,38 @@ class _DesktopApi:
         # 실패해도 JS 쪽 navigator.clipboard 폴백이 있으므로 ok=False 만 반환
         return {"ok": False}
 
+    def reveal_path(self, path):
+        """저장 폴더/파일을 Finder(또는 탐색기)에서 연다."""
+        import subprocess
+        import sys
+
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["open", str(path)])
+            elif sys.platform.startswith("win"):
+                subprocess.run(["explorer", str(path)])
+            else:
+                subprocess.run(["xdg-open", str(path)])
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    def reveal_path(self, path):
+        """파일 탐색기에서 해당 폴더/파일을 연다(평가표 저장 위치)."""
+        import subprocess
+        import sys
+
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["open", path])
+            elif sys.platform.startswith("win"):
+                subprocess.run(["explorer", path])
+            else:
+                subprocess.run(["xdg-open", path])
+            return {"ok": True}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
 
 def main() -> None:
     port = _find_port(int(os.environ.get("MTPE_PORT", "8000")))

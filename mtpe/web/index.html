@@ -152,6 +152,12 @@
   .epblock .ephead .epname { font-weight:700; }
   .epblock .ephead .epstat { margin-left:auto; font-size:12px; color:var(--mut); }
   .epbody { padding:12px; }
+  .evalbox { border-top:1px solid var(--line); margin-top:10px; padding-top:8px; }
+  .evalbox select { width:auto; }
+  .ev-result { margin-top:8px; }
+  .evlink { display:inline-block; margin:3px 8px 3px 0; color:var(--accent); text-decoration:none;
+            border:1px solid var(--line); border-radius:7px; padding:5px 10px; font-size:12px; }
+  .evlink:hover { background:#13161d; }
   #toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
            background:#1c2230; border:1px solid var(--line); color:var(--fg);
            padding:10px 16px; border-radius:8px; font-size:13px; opacity:0;
@@ -563,6 +569,35 @@ function epBlock(eid, idx, total, steps) {
 }
 function cssEsc(s){ return s.replace(/[^a-zA-Z0-9_-]/g, c => "_" + c.charCodeAt(0)); }
 
+async function makeEvalSheet(fin, episode) {
+  const mode = fin.querySelector(".ev-mode").value;
+  const status = fin.querySelector(".ev-status");
+  const out = fin.querySelector(".ev-result");
+  status.textContent = "생성 중…"; out.innerHTML = "";
+  try {
+    const r = await fetch("/api/eval-sheet", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        work: $("workSelect").value, lang: $("langSelect").value,
+        version: $("versionSelect").value, episode, output_mode: mode,
+        model: currentModel(),
+      })});
+    const d = await r.json();
+    if (d.ok === false) { status.textContent = ""; out.innerHTML = `<div class="note">오류: ${d.error}</div>`; return; }
+    status.textContent = "완료 ✓";
+    let html = d.files.map(f =>
+      `<a href="${f.url}" download class="evlink">⬇ ${f.filename} (${f.size_kb}KB)</a>`).join("");
+    if (window.pywebview) html += `<button class="sec ev-open" style="margin-top:6px;">📂 저장 폴더 열기</button>`;
+    if (d.warnings && d.warnings.length) html += `<div class="fhelp" style="margin-top:4px;">⚠ ${d.warnings.join(" / ")}</div>`;
+    out.innerHTML = html;
+    const openBtn = out.querySelector(".ev-open");
+    if (openBtn) openBtn.addEventListener("click", () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.reveal_path)
+        window.pywebview.api.reveal_path(d.dir);
+    });
+  } catch (e) { status.textContent = ""; out.innerHTML = `<div class="note">요청 실패: ${e}</div>`; }
+}
+
 $("runBtn").addEventListener("click", async () => {
   const eids = [...document.querySelectorAll("#epList .epchk:checked")].map(c => c.value);
   if (!eids.length) return alert("번역할 회차를 선택하세요.");
@@ -630,11 +665,24 @@ function handleRun(ev) {
     fin.innerHTML = `<h2 style="margin-top:14px;">최종 결과</h2>
       <textarea spellcheck="false"></textarea>
       <div class="toolbar"><button class="sec b-copy">복사</button>
-      <button class="sec b-dl">다운로드</button></div>`;
+      <button class="sec b-dl">다운로드</button></div>
+      <div class="evalbox">
+        <div class="toolbar" style="margin-top:10px; align-items:center;">
+          <span class="fhelp">평가표:</span>
+          <select class="ev-mode">
+            <option value="single">단일 평가자용 (1개)</option>
+            <option value="method_a">방식 A (A·B·최종 3개)</option>
+          </select>
+          <button class="sec ev-gen">📋 평가 시트 생성</button>
+          <span class="ev-status fhelp"></span>
+        </div>
+        <div class="ev-result"></div>
+      </div>`;
     fin.querySelector("textarea").value = ev.output;
     fin.querySelector(".b-copy").addEventListener("click", () => copyText(ev.output));
     fin.querySelector(".b-dl").addEventListener("click", () =>
       downloadText(`${$("workSelect").value}_${ev.episode.replace(/\.[^.]+$/,"")}.txt`, ev.output));
+    fin.querySelector(".ev-gen").addEventListener("click", () => makeEvalSheet(fin, ev.episode));
     block.querySelector(".epbody").appendChild(fin);
   } else if (ev.type === "episode_error") {
     const block = $("ep-" + cssEsc(ev.episode));

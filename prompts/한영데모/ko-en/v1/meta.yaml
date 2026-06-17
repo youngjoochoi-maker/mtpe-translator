@@ -1,0 +1,29 @@
+work: 한영데모
+lang: ko-en
+version: v1
+source_lang: 한국어
+target_lang: 영어
+notes: 평가 기능 테스트용 한영 데모(ko-en). 모의 모드로 흐름 확인 가능.
+steps:
+- id: 1
+  name: 핵심정보 추출
+  file: step1.txt
+  inputs: [source, glossary]
+  extract: tag:o
+- id: 2
+  name: 분석
+  file: step2.txt
+  inputs: [source, glossary]
+- id: 3
+  name: 초벌 번역
+  file: step3.txt
+  inputs: [source, step2]
+- id: 4
+  name: 검수
+  file: step4.txt
+  inputs: [source, step2, step3]
+- id: 5
+  name: 최종
+  file: step5.txt
+  inputs: [source, step2, step3, step4]
+  output: final

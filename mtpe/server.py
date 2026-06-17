@@ -10,11 +10,14 @@ import json
 import os
 import re
 import shutil
+from datetime import date
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 from fastapi import Body, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import (
+    FileResponse,
     HTMLResponse,
     JSONResponse,
     RedirectResponse,
@@ -846,6 +849,98 @@ def tune(payload: dict = Body(...)) -> StreamingResponse:
             yield emit({"type": "error", "message": str(exc)})
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+# ── MT 추출본 평가 시트 자동 기입 ────────────────────────────
+
+@app.post("/api/eval-sheet")
+def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
+    """번역 완료된 회차를 v2 평가표(.xlsx)로 생성. 원문+MT 정렬 후 템플릿 기입."""
+    load_env_into_os()
+    from .evaluation.align import align, naive_align
+    from .evaluation.sheet import TEMPLATES, generate_files
+
+    work = payload.get("work")
+    lang = payload.get("lang")
+    version = payload.get("version") or "v1"
+    episode = payload.get("episode")
+    mode = payload.get("output_mode", "single")
+    model = payload.get("model") or "mock"
+
+    if not work or not episode:
+        return JSONResponse({"ok": False, "error": "작품/회차가 필요합니다."}, status_code=400)
+    if lang not in TEMPLATES:
+        return JSONResponse({"ok": False,
+            "error": f"'{lang}' 언어쌍은 평가표 템플릿이 없습니다. (한일 ko-ja / 한영 ko-en 만 지원)"},
+            status_code=400)
+
+    ep_path = _episode_path(work, episode)
+    if not ep_path:
+        return JSONResponse({"ok": False, "error": "회차 원문을 찾을 수 없습니다."}, status_code=400)
+    source = read_text(str(ep_path))
+
+    final_path = _work_dir(work) / "output" / Path(episode).stem / "final.txt"
+    if not final_path.exists():
+        return JSONResponse({"ok": False,
+            "error": "이 회차의 번역 결과(final.txt)가 없습니다. 먼저 번역하세요."}, status_code=400)
+    mt = final_path.read_text(encoding="utf-8")
+
+    need = required_key_for(model)
+    if model != "mock" and need and not os.environ.get(need):
+        return JSONResponse({"ok": False,
+            "error": f"{need} 가 설정되지 않았습니다."}, status_code=400)
+
+    try:
+        aligned = naive_align(source, mt) if model == "mock" else align(source, mt, model=model)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"정렬 실패: {exc}"}, status_code=400)
+
+    data = {
+        "work_id": work,
+        "work_title": payload.get("work_title", work),
+        "language_pair": lang,
+        "prompt_version": payload.get("prompt_version", version),
+        "model_name": model,
+        "chapter_range": payload.get("chapter_range", Path(episode).stem),
+        "extraction_date": payload.get("extraction_date") or date.today().isoformat(),
+        "source_sentences": aligned["source_sentences"],
+        "mt_sentences": aligned["mt_sentences"],
+        "scene_breakdown": aligned.get("scene_breakdown", []),
+        "output_mode": mode,
+    }
+    try:
+        res = generate_files(data)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"평가표 생성 실패: {exc}"}, status_code=400)
+
+    out_dir = _work_dir(work) / "eval" / Path(episode).stem
+    out_dir.mkdir(parents=True, exist_ok=True)
+    files = []
+    stem = Path(episode).stem
+    for fname, blob in res.files:
+        (out_dir / fname).write_bytes(blob)
+        files.append({
+            "filename": fname,
+            "size_kb": round(len(blob) / 1024),
+            "url": f"/api/eval-download?work={quote(work)}&episode={quote(stem)}&name={quote(fname)}",
+        })
+    return JSONResponse({"ok": True, "files": files, "warnings": res.warnings,
+                         "dir": str(out_dir)})
+
+
+@app.get("/api/eval-download")
+def eval_download(work: str, episode: str, name: str):
+    """생성된 평가표 파일 다운로드."""
+    try:
+        fp = _work_dir(work) / "eval" / _safe_seg(episode) / _safe_seg(name)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if not fp.exists():
+        return JSONResponse({"error": "파일을 찾을 수 없습니다."}, status_code=404)
+    return FileResponse(
+        str(fp), filename=name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.on_event("startup")
