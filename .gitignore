@@ -24,4 +24,3 @@ _serverdata/
 .DS_Store
 *.log
 .claude/settings.local.json
-.github/workflows/build-windows.yml
