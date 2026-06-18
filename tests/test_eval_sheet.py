@@ -81,6 +81,51 @@ def test_filename_sanitized():
     assert "/" not in res.files[0][0] and ":" not in res.files[0][0]
 
 
+def test_qcheck_scene_samples_filled_formulas_preserved():
+    """⑧ 평가자 일치율: 장면마다 몇 문장씩 뽑아 원문/MT본 채우고, 일치 수식은 보존."""
+    from mtpe.evaluation.sheet import select_scene_samples
+
+    n = 12
+    scenes = [
+        {"scene_id": "s1", "start_sentence_index": 0, "end_sentence_index": 3},
+        {"scene_id": "s2", "start_sentence_index": 4, "end_sentence_index": 7},
+        {"scene_id": "s3", "start_sentence_index": 8, "end_sentence_index": 11},
+    ]
+    # 장면 3개 × 3문장(양끝+가운데) = 9개, 장면 경계가 고르게 분포
+    idx = select_scene_samples(scenes, n, per_scene=3)
+    assert idx == [0, 2, 3, 4, 6, 7, 8, 10, 11]
+
+    res = generate_files(_data(
+        source_sentences=[f"원문{i}." for i in range(n)],
+        mt_sentences=[f"mt{i}." for i in range(n)],
+        scene_breakdown=scenes, samples_per_scene=3,
+    ))
+    wb = openpyxl.load_workbook(io.BytesIO(res.files[0][1]))
+    ws = wb["⑧ 평가자 일치율"]
+    assert ws["B8"].value == "원문0."        # 첫 샘플(장면1 시작)
+    assert ws["C8"].value == "mt0."
+    assert ws["B16"].value == "원문11."       # 마지막 샘플(장면3 끝)
+    assert ws["D8"].value is None            # 평가자 채점칸은 비움
+
+
+def test_qcheck_ko_ja_clears_example_ratings():
+    """한일 ⑧은 템플릿 예시 평점(D열)을 지우고, 일치 수식(J열)은 보존."""
+    res = generate_files(_data(
+        language_pair="ko-ja", prompt_version="v1.0",
+        source_sentences=[f"원문{i}." for i in range(6)],
+        mt_sentences=[f"訳{i}。" for i in range(6)],
+        scene_breakdown=[{"scene_id": "場面-01", "start_sentence_index": 0,
+                          "end_sentence_index": 5}],
+        samples_per_scene=3,
+    ))
+    wb = openpyxl.load_workbook(io.BytesIO(res.files[0][1]))
+    ws = wb["⑧ 평가자 일치율"]
+    assert ws["B17"].value == "원문0."        # 샘플 채움(17행부터)
+    assert str(ws["J17"].value).startswith("=IF(")  # 일치 수식 보존
+    # 템플릿에 박혀있던 예시 평점(D열)이 전부 제거됐는지
+    assert all(ws[f"D{r}"].value is None for r in range(17, 67))
+
+
 def test_ko_ja_layout_human_and_mt_columns():
     """한일은 사람번역 C, MT D 위치 + F~R 카테고리."""
     res = generate_files(_data(

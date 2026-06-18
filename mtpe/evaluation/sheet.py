@@ -44,6 +44,13 @@ TEMPLATES: dict[str, dict] = {
         # ⑥ 버전 비교
         "cmp_sheet": "⑥ 버전 비교",
         "cell_cmp_header": "C4",
+        # ⑧ 평가자 일치율 — 장면별 대표 샘플(원문 B / MT본 C)만 채움
+        "qcheck_sheet": "⑧ 평가자 일치율",
+        "qcheck_start_row": 8,
+        "qcheck_last_row": 57,           # 샘플 50칸(8~57)
+        "qcheck_col_source": "B",
+        "qcheck_col_mt": "C",
+        "qcheck_clear_cols": ["D", "E", "F", "G"],  # 평가자 입력칸(H/I/J=일치는 보존)
     },
     "ko-ja": {
         "file": "한일_v2.xlsx",
@@ -66,8 +73,55 @@ TEMPLATES: dict[str, dict] = {
         "cell_date": "D4",
         "cmp_sheet": "⑥ 버전 비교",
         "cell_cmp_header": "C4",
+        # ⑧ 평가자 일치율 — 샘플 50칸(17~66), 평가자 3명(D~I), 일치 J/K/L=수식 보존
+        "qcheck_sheet": "⑧ 평가자 일치율",
+        "qcheck_start_row": 17,
+        "qcheck_last_row": 66,
+        "qcheck_col_source": "B",
+        "qcheck_col_mt": "C",
+        "qcheck_clear_cols": ["D", "E", "F", "G", "H", "I"],  # 예시 평점 제거(J~L 수식 보존)
     },
 }
+
+
+def select_scene_samples(scenes: list, n_sentences: int, per_scene: int = 3) -> list[int]:
+    """장면(scene)마다 균등 간격으로 몇 문장씩 뽑아 대표 샘플 인덱스를 만든다.
+
+    ⑧ 평가자 일치율(보정)용 — 전체를 다 넣지 않고 각 장면을 고르게 대표하도록 추출.
+    장면 정보가 없으면 전체를 한 장면으로 보고 균등 추출한다.
+    """
+    if n_sentences <= 0:
+        return []
+    if not scenes:
+        scenes = [{"start_sentence_index": 0, "end_sentence_index": n_sentences - 1}]
+
+    picked: list[int] = []
+    for sc in scenes:
+        s = sc.get("start_sentence_index")
+        e = sc.get("end_sentence_index")
+        if s is None or e is None:
+            continue
+        s = max(0, int(s))
+        e = min(n_sentences - 1, int(e))
+        if e < s:
+            continue
+        length = e - s + 1
+        k = max(1, min(per_scene, length))
+        if k >= length:
+            idxs = list(range(s, e + 1))
+        elif k == 1:
+            idxs = [s + length // 2]                       # 1문장이면 장면 가운데
+        else:
+            idxs = [s + round(i * (length - 1) / (k - 1)) for i in range(k)]  # 양끝 포함 균등
+        picked.extend(idxs)
+
+    seen: set[int] = set()
+    out: list[int] = []
+    for i in picked:
+        if 0 <= i < n_sentences and i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
 
 
 @dataclass
@@ -159,6 +213,29 @@ def fill_workbook(data: dict):
     # ⑥ 버전 비교 — 현재 버전 헤더
     cws = wb[cfg["cmp_sheet"]]
     cws[cfg["cell_cmp_header"]] = f"{data.get('prompt_version', '')} (현재)"
+
+    # ⑧ 평가자 일치율 — 장면별 대표 샘플(원문/MT본)만 채움. 평가자 채점칸은 비우고 수식은 보존.
+    if cfg.get("qcheck_sheet"):
+        qws = wb[cfg["qcheck_sheet"]]
+        per_scene = int(data.get("samples_per_scene", 3) or 3)
+        picked = select_scene_samples(
+            data.get("scene_breakdown") or [], len(src), per_scene
+        )
+        cap = cfg["qcheck_last_row"] - cfg["qcheck_start_row"] + 1
+        picked = picked[:cap]
+        for slot in range(cap):
+            r = cfg["qcheck_start_row"] + slot
+            if slot < len(picked):
+                idx = picked[slot]
+                qws[f"{cfg['qcheck_col_source']}{r}"] = src[idx]
+                qws[f"{cfg['qcheck_col_mt']}{r}"] = mt[idx]
+            else:
+                # 미사용 샘플 행: 템플릿 예시 문장 잔재 제거
+                qws[f"{cfg['qcheck_col_source']}{r}"] = None
+                qws[f"{cfg['qcheck_col_mt']}{r}"] = None
+            # 평가자 입력칸(예시 평점 포함) 비우기 — 일치 수식 칸은 절대 건드리지 않음
+            for col in cfg.get("qcheck_clear_cols", []):
+                qws[f"{col}{r}"] = None
 
     return wb
 

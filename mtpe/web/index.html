@@ -261,11 +261,15 @@
       <div><button class="sec danger" id="mDelVer">이 버전 삭제</button></div>
       <div><button class="sec" id="mNew">+ 새 작품/언어</button></div>
     </div>
-    <div id="mNewBox" style="display:none; margin-top:10px;" class="bar">
-      <div><label>새 작품명</label><input type="text" id="mNewWork" placeholder="예: 대소저" /></div>
-      <div><label>새 언어쌍</label><input type="text" id="mNewLang" placeholder="예: zh-ko" /></div>
-      <div><label>버전</label><input type="text" id="mNewVer" placeholder="v1" /></div>
-      <div><button class="sec" id="mNewTemplate">빈 5단계 템플릿 만들기</button></div>
+    <div id="mNewBox" style="display:none; margin-top:10px;">
+      <div class="hint" style="margin:0 0 8px;">아래를 채우고 <b>[→ 새 작품 시작]</b>을 누르면 그 작품의 <b>빈 5단계 편집</b>이 시작됩니다.
+        (그래야 저장 버전이 입력한 값으로 바뀝니다. 누르기 전엔 아래 저장 바가 직전에 불러온 작품 기준입니다.)</div>
+      <div class="bar">
+        <div><label>새 작품명</label><input type="text" id="mNewWork" placeholder="예: 대소저" /></div>
+        <div><label>새 언어쌍</label><input type="text" id="mNewLang" placeholder="예: zh-ko / ko-en" /></div>
+        <div><label>버전</label><input type="text" id="mNewVer" placeholder="v1" /></div>
+        <div><button class="runbtn-sm" id="mNewTemplate">→ 새 작품 시작 (빈 5단계)</button></div>
+      </div>
     </div>
 
     <h2 style="margin-top:18px;">이 세트 정보 <span class="fhelp" style="font-weight:400;">(불러온 번들의 기본 정보)</span></h2>

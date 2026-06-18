@@ -907,6 +907,7 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
         "mt_sentences": aligned["mt_sentences"],
         "scene_breakdown": aligned.get("scene_breakdown", []),
         "output_mode": mode,
+        "samples_per_scene": int(payload.get("samples_per_scene", 3) or 3),
     }
     try:
         res = generate_files(data)
