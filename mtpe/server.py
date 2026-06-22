@@ -754,7 +754,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                     yield emit({"type": "step", "episode": eid, "id": r.id,
                                 "name": r.name, "model": r.model,
                                 "chars": len(r.output), "output": r.output,
-                                "skipped": r.skipped})
+                                "skipped": r.skipped, "error": r.error})
                 outd = _work_dir(work) / "output" / Path(eid).stem
                 outd.mkdir(parents=True, exist_ok=True)
                 (outd / "final.txt").write_text(pipe.final_output, encoding="utf-8")

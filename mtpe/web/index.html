@@ -680,6 +680,9 @@ function handleRun(ev) {
     if (ev.skipped) {
       el.querySelector(".meta").textContent = "건너뜀 (프롬프트 비어 있음)";
       el.querySelector(".body").textContent = "이 단계는 프롬프트가 비어 있어 건너뛰고, 직전 단계 결과를 그대로 사용합니다. (이 작품에서 이 단계를 쓰려면 프롬프트 관리에서 내용을 채우세요.)";
+    } else if (ev.error) {
+      el.querySelector(".meta").textContent = "⚠ 모델 빈 응답";
+      el.querySelector(".body").textContent = `⚠ ${ev.error}\n\n→ 이 단계 결과 대신 직전 단계 결과를 최종으로 사용했습니다. 다시 시도하면 정상 처리될 수 있어요.`;
     } else {
       el.querySelector(".meta").textContent = `${ev.model} · ${ev.chars}자`;
       el.querySelector(".body").textContent = ev.output;

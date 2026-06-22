@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 
 from .bundle import Bundle, Step, load_bundle
-from .llm import call_llm
+from .llm import EmptyResponseError, call_llm
 
 _SEP = "─" * 28
 
@@ -28,6 +28,7 @@ class StageResult:
     raw: str           # LLM 원응답
     user_prompt: str = ""  # 실제로 보낸 프롬프트(튜닝 화면에서 확인용)
     skipped: bool = False  # 프롬프트가 비어 LLM 호출 없이 건너뛴 단계
+    error: str = ""        # 모델 빈 응답 등으로 실패(직전 결과로 대체됨)
 
 
 def extract_output(text: str, rule: str | None) -> str:
@@ -131,6 +132,7 @@ class Pipeline:
             artifacts.update({k: v for k, v in seed_artifacts.items() if v is not None})
         self.final_output = ""
         last_output = ""
+        last_nonempty = ""  # 빈 응답/빈 단계 시 최종을 직전 정상 결과로 대체하기 위함
 
         for step in self.bundle.steps:
             if start_from and step.id < start_from:
@@ -143,8 +145,9 @@ class Pipeline:
             # 프롬프트가 비어 있으면 LLM 호출 없이 직전 결과를 그대로 통과(이 작품은 이 단계 안 씀).
             # → 빈 단계가 0자로 최종 결과를 덮어쓰는 사고를 막는다.
             if not (instruction or "").strip():
-                output = last_output
+                output = last_nonempty
                 artifacts[f"step{step.id}"] = output
+                last_output = output
                 if step.is_final:
                     self.final_output = output
                 yield StageResult(
@@ -155,26 +158,35 @@ class Pipeline:
                 continue
 
             user_prompt = build_prompt(instruction, step, artifacts, self.input_labels)
-            raw = llm_fn(
-                model=model,
-                system_prompt=self.system_prompt,
-                user_prompt=user_prompt,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-            output = extract_output(raw, step.extract)
+            # 모델이 빈 응답(토큰한도/안전필터)을 주면 회차를 죽이지 않고 직전 결과로 대체 + 경고 표시.
+            try:
+                raw = llm_fn(
+                    model=model,
+                    system_prompt=self.system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+                output = extract_output(raw, step.extract)
+                err = ""
+            except EmptyResponseError as exc:
+                raw, output, err = "", last_nonempty, str(exc)
+
             artifacts[f"step{step.id}"] = output
             last_output = output
+            if output.strip():
+                last_nonempty = output
             if step.is_final:
                 self.final_output = output
 
             yield StageResult(
                 id=step.id, name=step.name, model=model, output=output, raw=raw,
-                user_prompt=user_prompt,
+                user_prompt=user_prompt, error=err,
             )
 
-        if not self.final_output:
-            self.final_output = last_output
+        # 최종이 비었으면(마지막 단계가 빈 응답·빈 프롬프트였던 경우) 직전 정상 결과로 대체
+        if not self.final_output.strip():
+            self.final_output = last_nonempty or last_output
 
     def run(
         self,
