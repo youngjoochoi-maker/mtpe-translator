@@ -27,6 +27,7 @@ class StageResult:
     output: str        # extract 규칙 적용 후 (다음 단계로 전달되는 값)
     raw: str           # LLM 원응답
     user_prompt: str = ""  # 실제로 보낸 프롬프트(튜닝 화면에서 확인용)
+    skipped: bool = False  # 프롬프트가 비어 LLM 호출 없이 건너뛴 단계
 
 
 def extract_output(text: str, rule: str | None) -> str:
@@ -137,9 +138,23 @@ class Pipeline:
             instruction = overrides.get(step.id)
             if instruction is None:
                 instruction = self.bundle.step_text(step)
-            user_prompt = build_prompt(instruction, step, artifacts, self.input_labels)
             model = model_override or step.model or self.default_model
 
+            # 프롬프트가 비어 있으면 LLM 호출 없이 직전 결과를 그대로 통과(이 작품은 이 단계 안 씀).
+            # → 빈 단계가 0자로 최종 결과를 덮어쓰는 사고를 막는다.
+            if not (instruction or "").strip():
+                output = last_output
+                artifacts[f"step{step.id}"] = output
+                if step.is_final:
+                    self.final_output = output
+                yield StageResult(
+                    id=step.id, name=step.name, model=model, output=output, raw="",
+                    user_prompt="(프롬프트가 비어 있어 건너뜀 — 직전 단계 결과를 그대로 유지)",
+                    skipped=True,
+                )
+                continue
+
+            user_prompt = build_prompt(instruction, step, artifacts, self.input_labels)
             raw = llm_fn(
                 model=model,
                 system_prompt=self.system_prompt,

@@ -753,7 +753,8 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                 for r in pipe.run_iter(source, tb_text, model_override=model, llm=llm):
                     yield emit({"type": "step", "episode": eid, "id": r.id,
                                 "name": r.name, "model": r.model,
-                                "chars": len(r.output), "output": r.output})
+                                "chars": len(r.output), "output": r.output,
+                                "skipped": r.skipped})
                 outd = _work_dir(work) / "output" / Path(eid).stem
                 outd.mkdir(parents=True, exist_ok=True)
                 (outd / "final.txt").write_text(pipe.final_output, encoding="utf-8")
@@ -942,6 +943,49 @@ def eval_download(work: str, episode: str, name: str):
     return FileResponse(
         str(fp), filename=name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.post("/api/export-docx")
+def export_docx(payload: dict = Body(...)) -> JSONResponse:
+    """최종 번역 결과를 Word(.docx) 로 저장하고 다운로드 URL 을 반환."""
+    import re as _re
+
+    import docx  # python-docx
+
+    work = payload.get("work")
+    episode = payload.get("episode")
+    text = payload.get("text") or ""
+    if not work or not episode:
+        return JSONResponse({"ok": False, "error": "작품/회차가 필요합니다."}, status_code=400)
+    stem = Path(episode).stem
+    safe_work = _re.sub(r'[\\/:*?"<>|]', "", str(work)).strip() or "WORK"
+    fname = f"{safe_work}_{stem}.docx"
+    try:
+        out_dir = _work_dir(work) / "output" / _safe_seg(stem)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    doc = docx.Document()
+    for line in text.split("\n"):
+        doc.add_paragraph(line)
+    doc.save(str(out_dir / fname))
+    return JSONResponse({"ok": True, "filename": fname, "dir": str(out_dir),
+        "url": f"/api/export-docx-download?work={quote(work)}&episode={quote(stem)}&name={quote(fname)}"})
+
+
+@app.get("/api/export-docx-download")
+def export_docx_download(work: str, episode: str, name: str):
+    """생성된 최종 결과 Word 파일 다운로드."""
+    try:
+        fp = _work_dir(work) / "output" / _safe_seg(episode) / _safe_seg(name)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if not fp.exists():
+        return JSONResponse({"error": "파일을 찾을 수 없습니다."}, status_code=404)
+    return FileResponse(
+        str(fp), filename=name,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
 

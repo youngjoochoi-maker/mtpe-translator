@@ -571,6 +571,29 @@ function epBlock(eid, idx, total, steps) {
 }
 function cssEsc(s){ return s.replace(/[^a-zA-Z0-9_-]/g, c => "_" + c.charCodeAt(0)); }
 
+async function makeDocx(fin, episode) {
+  const status = fin.querySelector(".docx-status");
+  const out = fin.querySelector(".docx-result");
+  const text = fin.querySelector("textarea").value;   // 편집한 내용 그대로 반영
+  status.textContent = "생성 중…"; out.innerHTML = "";
+  try {
+    const r = await fetch("/api/export-docx", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ work: $("workSelect").value, episode, text }) });
+    const d = await r.json();
+    if (d.ok === false) { status.textContent = ""; out.innerHTML = `<div class="note">오류: ${d.error}</div>`; return; }
+    status.textContent = "완료 ✓";
+    let html = `<a href="${d.url}" download class="evlink">⬇ ${d.filename}</a>`;
+    if (window.pywebview) html += `<button class="sec docx-open" style="margin-top:6px;">📂 저장 폴더 열기</button>`;
+    out.innerHTML = html;
+    const openBtn = out.querySelector(".docx-open");
+    if (openBtn) openBtn.addEventListener("click", () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.reveal_path)
+        window.pywebview.api.reveal_path(d.dir);
+    });
+  } catch (e) { status.textContent = ""; out.innerHTML = `<div class="note">요청 실패: ${e}</div>`; }
+}
+
 async function makeEvalSheet(fin, episode) {
   const status = fin.querySelector(".ev-status");
   const out = fin.querySelector(".ev-result");
@@ -654,8 +677,13 @@ function handleRun(ev) {
     const block = $("ep-" + cssEsc(ev.episode));
     const el = block.querySelector(`.step[data-sid="${ev.id}"]`);
     el.classList.add("done"); el.classList.remove("run");
-    el.querySelector(".meta").textContent = `${ev.model} · ${ev.chars}자`;
-    el.querySelector(".body").textContent = ev.output;
+    if (ev.skipped) {
+      el.querySelector(".meta").textContent = "건너뜀 (프롬프트 비어 있음)";
+      el.querySelector(".body").textContent = "이 단계는 프롬프트가 비어 있어 건너뛰고, 직전 단계 결과를 그대로 사용합니다. (이 작품에서 이 단계를 쓰려면 프롬프트 관리에서 내용을 채우세요.)";
+    } else {
+      el.querySelector(".meta").textContent = `${ev.model} · ${ev.chars}자`;
+      el.querySelector(".body").textContent = ev.output;
+    }
     const next = el.nextElementSibling;
     if (next && next.classList.contains("step")) next.classList.add("run");
   } else if (ev.type === "episode_final") {
@@ -666,7 +694,10 @@ function handleRun(ev) {
     fin.innerHTML = `<h2 style="margin-top:14px;">최종 결과</h2>
       <textarea spellcheck="false"></textarea>
       <div class="toolbar"><button class="sec b-copy">복사</button>
-      <button class="sec b-dl">다운로드</button></div>
+      <button class="sec b-dl">다운로드(.txt)</button>
+      <button class="sec b-docx">📄 Word(.docx)</button>
+      <span class="docx-status fhelp"></span></div>
+      <div class="docx-result"></div>
       <div class="evalbox">
         <div class="toolbar" style="margin-top:10px; align-items:center;">
           <button class="sec ev-gen">📋 평가 시트 생성</button>
@@ -678,6 +709,7 @@ function handleRun(ev) {
     fin.querySelector(".b-copy").addEventListener("click", () => copyText(ev.output));
     fin.querySelector(".b-dl").addEventListener("click", () =>
       downloadText(`${$("workSelect").value}_${ev.episode.replace(/\.[^.]+$/,"")}.txt`, ev.output));
+    fin.querySelector(".b-docx").addEventListener("click", () => makeDocx(fin, ev.episode));
     fin.querySelector(".ev-gen").addEventListener("click", () => makeEvalSheet(fin, ev.episode));
     block.querySelector(".epbody").appendChild(fin);
   } else if (ev.type === "episode_error") {
