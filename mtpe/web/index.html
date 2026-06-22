@@ -262,13 +262,11 @@
       <div><button class="sec" id="mNew">+ 새 작품/언어</button></div>
     </div>
     <div id="mNewBox" style="display:none; margin-top:10px;">
-      <div class="hint" style="margin:0 0 8px;">아래를 채우고 <b>[→ 새 작품 시작]</b>을 누르면 그 작품의 <b>빈 5단계 편집</b>이 시작됩니다.
-        (그래야 저장 버전이 입력한 값으로 바뀝니다. 누르기 전엔 아래 저장 바가 직전에 불러온 작품 기준입니다.)</div>
+      <div class="hint" style="margin:0 0 8px;">새 작품명과 언어쌍을 넣고 <b>[+ 새 작품 만들기]</b>를 누르면 그 작품이 <b>v1으로 즉시 생성</b>되고(번역 탭에도 바로 보임) 빈 5단계 편집이 시작됩니다. 이어서 내용을 채우고 <b>[현재 버전 덮어쓰기]</b>로 저장하세요.</div>
       <div class="bar">
         <div><label>새 작품명</label><input type="text" id="mNewWork" placeholder="예: 대소저" /></div>
         <div><label>새 언어쌍</label><input type="text" id="mNewLang" placeholder="예: zh-ko / ko-en" /></div>
-        <div><label>버전</label><input type="text" id="mNewVer" placeholder="v1" /></div>
-        <div><button class="runbtn-sm" id="mNewTemplate">→ 새 작품 시작 (빈 5단계)</button></div>
+        <div><button class="runbtn-sm" id="mNewTemplate">+ 새 작품 만들기 (v1)</button></div>
       </div>
     </div>
 
@@ -866,10 +864,13 @@ $("mDelVer").addEventListener("click", async () => {
   mPopulateWorks();         // 관리 탭 드롭다운 갱신
 });
 
-$("mNewTemplate").addEventListener("click", () => {
+$("mNewTemplate").addEventListener("click", async () => {
   const work = $("mNewWork").value.trim(), lang = $("mNewLang").value.trim();
-  const ver = $("mNewVer").value.trim() || "v1";
   if (!work || !lang) return alert("새 작품명과 언어쌍을 입력하세요.");
+  // 이미 있는 작품·언어면 덮어쓰기 사고 방지
+  const dup = BUNDLES.some(b => b.work.normalize('NFC') === work.normalize('NFC')
+    && (b.langs || []).some(l => l.lang === lang));
+  if (dup) return alert(`이미 있는 작품·언어입니다: ${work} / ${lang}\n위에서 [불러오기]로 편집하거나 다른 이름을 쓰세요.`);
   // 기본: 1단계는 원문+설정집, 이후 단계는 원문+설정집+직전 단계 결과(자동 연결)
   const names = ["1단계","2단계","3단계","4단계","5단계"];
   const tpl = names.map((nm, i) => ({
@@ -877,14 +878,15 @@ $("mNewTemplate").addEventListener("click", () => {
     inputs: i === 0 ? ["source","glossary"] : ["source","glossary","step"+i],
     final: i === names.length-1, model:"", extract:"", content:"",
   }));
-  mState = { work, lang, version:ver };
+  mState = { work, lang, version:"v1" };
   $("mSrcLang").value = "auto"; $("mTgtLang").value = "한국어"; $("mNotes").value = "";
   renderSteps(tpl);
-  $("mTarget").textContent = `새 세트 작성 중: ${work} / ${lang} / ${ver} (아직 저장 안 됨)`;
-  $("mNextVer").textContent = ver;
   $("mNewBox").style.display = "none";
+  $("mNewWork").value = ""; $("mNewLang").value = "";
   tuneOutputs = {}; tunePrompts = {};
   populateTuneEpisodes();
+  await mSave("v1");   // 즉시 v1 생성 → 번역 탭 드롭다운에도 바로 보임
+  mMsg(`새 작품 생성됨: ${work} / ${lang} / v1 — 이제 5단계 내용을 채우고 [현재 버전 덮어쓰기]로 저장하세요.`, true);
 });
 
 $("mAddStep").addEventListener("click", () => {
