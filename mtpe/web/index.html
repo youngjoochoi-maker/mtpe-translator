@@ -574,7 +574,6 @@ function epBlock(eid, idx, total, steps) {
 function cssEsc(s){ return s.replace(/[^a-zA-Z0-9_-]/g, c => "_" + c.charCodeAt(0)); }
 
 async function makeEvalSheet(fin, episode) {
-  const mode = fin.querySelector(".ev-mode").value;
   const status = fin.querySelector(".ev-status");
   const out = fin.querySelector(".ev-result");
   status.textContent = "생성 중…"; out.innerHTML = "";
@@ -583,7 +582,7 @@ async function makeEvalSheet(fin, episode) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         work: $("workSelect").value, lang: $("langSelect").value,
-        version: $("versionSelect").value, episode, output_mode: mode,
+        version: $("versionSelect").value, episode, output_mode: "single",
         model: currentModel(),
       })});
     const d = await r.json();
@@ -672,13 +671,8 @@ function handleRun(ev) {
       <button class="sec b-dl">다운로드</button></div>
       <div class="evalbox">
         <div class="toolbar" style="margin-top:10px; align-items:center;">
-          <span class="fhelp">평가표:</span>
-          <select class="ev-mode">
-            <option value="single">단일 평가자용 (1개)</option>
-            <option value="method_a">방식 A (A·B·최종 3개)</option>
-          </select>
           <button class="sec ev-gen">📋 평가 시트 생성</button>
-          <span class="ev-status fhelp"></span>
+          <span class="ev-status fhelp">MT 평가표(.xlsx) 1개 생성 — 복제·배포는 운영측에서</span>
         </div>
         <div class="ev-result"></div>
       </div>`;

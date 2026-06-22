@@ -54,14 +54,11 @@ def test_single_fills_and_preserves():
     assert wb["⑥ 버전 비교"]["C4"].value == "v1.2 (현재)"
 
 
-def test_method_a_three_files():
-    res = generate_files(_data(output_mode="method_a"))
-    names = [f[0] for f in res.files]
-    assert names == [
-        "WORK01_v1.2_평가표_A용.xlsx",
-        "WORK01_v1.2_평가표_B용.xlsx",
-        "WORK01_v1.2_평가표_최종본.xlsx",
-    ]
+def test_single_file_only():
+    """평가표는 항상 단일 파일 1개만 생성(method_a 폐지)."""
+    res = generate_files(_data(output_mode="method_a"))  # 폐지된 모드를 줘도
+    assert len(res.files) == 1                            # 단일 파일만 나온다
+    assert res.files[0][0] == "WORK01_v1.2_평가표.xlsx"
 
 
 def test_length_mismatch_errors():

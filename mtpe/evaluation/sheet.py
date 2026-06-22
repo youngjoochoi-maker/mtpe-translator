@@ -253,7 +253,10 @@ def _to_bytes(wb) -> bytes:
 
 
 def generate_files(data: dict) -> EvalResult:
-    """output_mode 에 따라 평가표 파일들을 생성해 반환."""
+    """평가표(.xlsx) 단일 파일을 생성해 반환.
+
+    2명 이상 평가는 운영측에서 이 파일을 복제·파일명 수정해 배포한다(평가자별 분할 안 함).
+    """
     warnings = _validate(data)
     wb = fill_workbook(data)
     payload = _to_bytes(wb)
@@ -261,15 +264,7 @@ def generate_files(data: dict) -> EvalResult:
     wid = _sanitize_filename(data.get("work_id", "WORK"))
     ver = _sanitize_filename(data.get("prompt_version", "v1"))
     base = f"{wid}_{ver}_평가표"
-    mode = data.get("output_mode", "single")
 
     result = EvalResult(warnings=warnings)
-    if mode == "single":
-        result.files.append((f"{base}.xlsx", payload))
-    elif mode == "method_a":
-        # 동일 데이터로 3개(파일명만 다름)
-        for suffix in ("A용", "B용", "최종본"):
-            result.files.append((f"{base}_{suffix}.xlsx", payload))
-    else:
-        raise ValueError(f"알 수 없는 output_mode: {mode} (single 또는 method_a)")
+    result.files.append((f"{base}.xlsx", payload))
     return result
