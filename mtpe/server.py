@@ -356,8 +356,9 @@ def save_bundle(payload: dict = Body(...)) -> JSONResponse:
     """프롬프트 + meta 를 번들 경로에 저장(없으면 생성). 새 버전/새 작품도 동일 처리."""
     try:
         work = _safe_seg(payload["work"])
-        lang = _safe_seg(payload["lang"])
-        version = _safe_seg(payload["version"])
+        # 언어쌍·버전은 소문자로 통일(ko-EN / V1 등 대소문자 혼용 방지 → 평가표·번들 매칭 안정)
+        lang = _safe_seg(payload["lang"]).lower()
+        version = _safe_seg(payload["version"]).lower()
     except (KeyError, ValueError) as e:
         return JSONResponse({"ok": False, "error": f"입력 오류: {e}"}, status_code=400)
 
@@ -861,8 +862,8 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
     from .evaluation.sheet import TEMPLATES, generate_files
 
     work = payload.get("work")
-    lang = payload.get("lang")
-    version = payload.get("version") or "v1"
+    lang = (payload.get("lang") or "").lower()   # ko-EN 등 들어와도 ko-en 으로 매칭
+    version = (payload.get("version") or "v1").lower()
     episode = payload.get("episode")
     mode = payload.get("output_mode", "single")
     model = payload.get("model") or "mock"

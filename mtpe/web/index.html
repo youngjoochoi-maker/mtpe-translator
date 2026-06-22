@@ -864,8 +864,13 @@ $("mDelVer").addEventListener("click", async () => {
   mPopulateWorks();         // 관리 탭 드롭다운 갱신
 });
 
+// 언어쌍은 입력 즉시 소문자로 (ko-EN → ko-en)
+$("mNewLang").addEventListener("input", (e) => {
+  const p = e.target.selectionStart; e.target.value = e.target.value.toLowerCase();
+  try { e.target.setSelectionRange(p, p); } catch (_) {}
+});
 $("mNewTemplate").addEventListener("click", async () => {
-  const work = $("mNewWork").value.trim(), lang = $("mNewLang").value.trim();
+  const work = $("mNewWork").value.trim(), lang = $("mNewLang").value.trim().toLowerCase();
   if (!work || !lang) return alert("새 작품명과 언어쌍을 입력하세요.");
   // 이미 있는 작품·언어면 덮어쓰기 사고 방지
   const dup = BUNDLES.some(b => b.work.normalize('NFC') === work.normalize('NFC')
