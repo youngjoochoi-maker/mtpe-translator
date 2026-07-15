@@ -13,8 +13,8 @@ datas = []
 binaries = []
 hiddenimports = []
 
-# PySide6 / python-docx 는 데이터·서브모듈이 많아 통째로 수집
-for pkg in ("PySide6", "shiboken6", "docx"):
+# PySide6 / python-docx / openpyxl 는 데이터·서브모듈이 많아 통째로 수집
+for pkg in ("PySide6", "shiboken6", "docx", "openpyxl"):
     try:
         d, b, h = collect_all(pkg)
         datas += d

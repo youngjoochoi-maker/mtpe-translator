@@ -46,8 +46,9 @@ from PySide6.QtWidgets import (
 )
 
 from .counter import Counter, Counts
+from .exporter import ExcelExporter
 from .processor import FileResult, Processor, SplitMode, SplitOptions
-from .utils import is_supported_file
+from .utils import get_stem, is_supported_file
 
 
 # ---------------------------------------------------------------------------- #
@@ -317,6 +318,15 @@ class MainWindow(QWidget):
         box = QGroupBox("⑤ 결과")
         layout = QVBoxLayout(box)
 
+        # 상단 버튼 줄: Excel 내보내기
+        top = QHBoxLayout()
+        top.addStretch(1)
+        self.btn_export = QPushButton("Excel로 내보내기")
+        self.btn_export.clicked.connect(self._on_export_excel)
+        self.btn_export.setEnabled(False)  # 결과가 있을 때만 활성화
+        top.addWidget(self.btn_export)
+        layout.addLayout(top)
+
         self.result_table = QTableWidget(0, 6)
         self.result_table.setHorizontalHeaderLabels(
             ["번호", "파일명", "공백포함 글자수", "공백제외 글자수", "단어수", "줄수"]
@@ -481,6 +491,7 @@ class MainWindow(QWidget):
         self.total_label.setText("총합: -")
         self.progress.setValue(0)
         self.log_view.clear()
+        self.btn_export.setEnabled(False)
         self._set_running(True)
 
         # 백그라운드 스레드 구성
@@ -510,6 +521,8 @@ class MainWindow(QWidget):
         """파일 하나가 끝날 때마다 결과 표에 누적 반영한다."""
         self._results.append(result)
         self._refresh_result_table()
+        # 결과가 하나라도 생기면 Excel 내보내기 활성화
+        self.btn_export.setEnabled(bool(self._results))
 
     def _refresh_result_table(self) -> None:
         """누적된 모든 결과로 표와 총합을 다시 그린다."""
@@ -564,6 +577,40 @@ class MainWindow(QWidget):
             self._thread.wait()
             self._thread = None
             self._worker = None
+
+    # ------------------------------------------------------------------ #
+    # Excel 내보내기
+    # ------------------------------------------------------------------ #
+    def _on_export_excel(self) -> None:
+        """현재 결과를 Excel(.xlsx) 파일로 저장한다."""
+        if not self._results:
+            QMessageBox.warning(self, "확인", "내보낼 결과가 없습니다.")
+            return
+
+        # 기본 저장 이름: 첫 원본 파일명 기반, 원본 폴더에 저장 제안
+        first_source = self._results[0].source_path
+        default_name = f"{get_stem(first_source)}_분권결과.xlsx"
+        default_dir = os.path.dirname(os.path.abspath(first_source))
+        default_path = os.path.join(default_dir, default_name)
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Excel로 내보내기", default_path, "Excel 파일 (*.xlsx)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+
+        try:
+            ExcelExporter().export(self._results, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(
+                self, "내보내기 오류", f"Excel 저장 중 오류가 발생했습니다.\n{exc}"
+            )
+            return
+
+        self._log(f"Excel 저장 완료: {path}")
+        QMessageBox.information(self, "완료", f"Excel 파일로 저장했습니다.\n{path}")
 
     # ------------------------------------------------------------------ #
     # 보조
