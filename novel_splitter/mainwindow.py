@@ -35,7 +35,9 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QSpinBox,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -112,7 +114,8 @@ class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("소설 분권 프로그램")
-        self.resize(920, 780)
+        self.resize(1000, 1000)
+        self.setMinimumSize(760, 600)
         self.setAcceptDrops(True)  # 드래그앤드롭 허용
 
         self._files: List[str] = []            # 선택된 파일 목록
@@ -130,11 +133,33 @@ class MainWindow(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
 
-        root.addWidget(self._build_file_section())
-        root.addWidget(self._build_mode_section())
-        root.addWidget(self._build_output_section())
-        root.addWidget(self._build_run_section())
-        root.addWidget(self._build_result_section(), stretch=1)
+        # 위(설정)와 아래(결과)를 세로 스플리터로 나눠, 경계를 드래그해
+        # 결과 표 영역을 원하는 만큼 넓힐 수 있게 한다.
+        splitter = QSplitter(Qt.Vertical)
+
+        # 위쪽: 설정 영역(파일/방식/출력/실행). 창이 작아지면 스크롤된다.
+        top = QWidget()
+        top_layout = QVBoxLayout(top)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.addWidget(self._build_file_section())
+        top_layout.addWidget(self._build_mode_section())
+        top_layout.addWidget(self._build_output_section())
+        top_layout.addWidget(self._build_run_section())
+        top_layout.addStretch(0)
+
+        top_scroll = QScrollArea()
+        top_scroll.setWidgetResizable(True)
+        top_scroll.setWidget(top)
+        top_scroll.setFrameShape(QScrollArea.NoFrame)
+
+        splitter.addWidget(top_scroll)
+        splitter.addWidget(self._build_result_section())
+        # 결과 영역이 넓어지는 방향으로 크기 배분
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([540, 460])
+
+        root.addWidget(splitter)
 
     # --- 1) 파일 선택 영역 ------------------------------------------------ #
     def _build_file_section(self) -> QGroupBox:
@@ -300,7 +325,9 @@ class MainWindow(QWidget):
         self.result_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.Stretch
         )
-        layout.addWidget(self.result_table)
+        # 결과 표가 기본적으로 넉넉히 보이도록 최소 높이 지정(스플리터로 더 키울 수 있음)
+        self.result_table.setMinimumHeight(320)
+        layout.addWidget(self.result_table, stretch=1)
 
         self.total_label = QLabel("총합: -")
         self.total_label.setStyleSheet("font-weight: bold;")

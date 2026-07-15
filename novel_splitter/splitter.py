@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import Callable, List
 
-from .blocks import Block, ParagraphBlock
+from .blocks import Block, ParagraphBlock, TableBlock
 from .counter import Counter
 
 # 문장 종료 부호(마침표/물음표/느낌표/말줄임표, 전각 포함) + 뒤따르는 닫는 따옴표·괄호와 공백.
@@ -191,31 +191,43 @@ class Splitter:
         """
         measure_text(문자열) 값을 누적하며 limit 이상이 되면 분권을 확정한다.
 
-        핵심: 문단이 기준보다 길면 문단 경계에서만 자르지 않고 '문장 경계'에서
-        나눈다. 덕분에 각 분권이 기준에 훨씬 가깝게 맞춰지며,
-        문장 중간은 절대 잘리지 않는다.
+        핵심: 기준보다 큰 블록도 통째로 넘기지 않고 더 작은 단위에서 나눈다.
+        덕분에 각 분권이 기준에 훨씬 가깝게 맞춰진다.
 
-        - 문단(ParagraphBlock): 문장 단위로 채우되, 한 분권 안에 들어간
+        - 문단(ParagraphBlock): '문장 경계'에서 나누되, 한 분권 안에 들어간
           같은 문단의 문장들은 다시 하나의 문단으로 합쳐 원본 구조를 보존한다.
-        - 표(TableBlock) 등: 쪼갤 수 없으므로 통째로 배치한다(불가피한 초과 허용).
-        - 종료 부호 없는 매우 긴 한 문장은 자르지 않으므로 초과할 수 있다.
+          문장 중간은 절대 자르지 않는다.
+        - 표(TableBlock): '행(row) 경계'에서 나누되, 한 분권 안에 들어간
+          같은 표의 행들은 다시 하나의 표로 합쳐 표 구조를 보존한다.
+          셀·행 중간은 자르지 않는다.
+        - 그 외 쪼갤 수 없는 블록은 통째로 배치한다(불가피한 초과 허용).
+        - 종료 부호 없는 매우 긴 한 문장/한 행은 자르지 않으므로 초과할 수 있다.
         """
         chunks: List[List[Block]] = []
         current: List[Block] = []
-        pending: List[str] = []  # 현재 문단에서 현재 분권에 쌓이는 문장들
+        pending_sents: List[str] = []       # 현재 문단에서 현재 분권에 쌓이는 문장들
+        pending_rows: List[List[str]] = []  # 현재 표에서 현재 분권에 쌓이는 행들
         running = 0
 
-        def flush_pending() -> None:
+        def flush_para() -> None:
             """쌓인 문장들을 하나의 문단으로 합쳐 현재 분권에 넣는다."""
-            nonlocal pending
-            if pending:
-                current.append(ParagraphBlock(text="".join(pending)))
-                pending = []
+            nonlocal pending_sents
+            if pending_sents:
+                current.append(ParagraphBlock(text="".join(pending_sents)))
+                pending_sents = []
+
+        def flush_table() -> None:
+            """쌓인 행들을 하나의 표로 합쳐 현재 분권에 넣는다."""
+            nonlocal pending_rows
+            if pending_rows:
+                current.append(TableBlock(rows=list(pending_rows)))
+                pending_rows = []
 
         def close_chunk() -> None:
-            """현재 분권을 확정하고 초기화한다."""
+            """현재 분권을 확정하고 초기화한다(대기 중인 문단·표를 먼저 확정)."""
             nonlocal current, running
-            flush_pending()
+            flush_para()
+            flush_table()
             if current:
                 chunks.append(current)
             current = []
@@ -223,21 +235,33 @@ class Splitter:
 
         for block in blocks:
             if isinstance(block, ParagraphBlock):
+                flush_table()  # 블록 종류가 바뀌면 대기 중인 표를 먼저 확정
                 sentences = split_sentences(block.text)
                 if not sentences:
                     # 빈 줄(빈 문단)도 구조 보존을 위해 그대로 유지
                     sentences = [block.text]
                 for sent in sentences:
-                    pending.append(sent)
+                    pending_sents.append(sent)
                     running += measure_text(sent)
-                    # 기준 이상이 되면 현재까지를 한 분권으로 확정
                     if running >= limit:
                         close_chunk()
                 # 문단이 끝나면 남은 문장들을 하나의 문단으로 확정(문단 경계 보존)
-                flush_pending()
+                flush_para()
+
+            elif isinstance(block, TableBlock):
+                flush_para()  # 블록 종류가 바뀌면 대기 중인 문단을 먼저 확정
+                for row in block.rows:
+                    pending_rows.append(row)
+                    running += measure_text("\t".join(row))
+                    if running >= limit:
+                        close_chunk()
+                # 표가 끝나면 남은 행들을 하나의 표로 확정(표 경계 보존)
+                flush_table()
+
             else:
-                # 표 등 쪼갤 수 없는 블록: 통째로 배치
-                flush_pending()
+                # 알 수 없는 쪼갤 수 없는 블록: 통째로 배치
+                flush_para()
+                flush_table()
                 current.append(block)
                 running += measure_text(block.count_text())
                 if running >= limit:
