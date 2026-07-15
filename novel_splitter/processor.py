@@ -90,29 +90,29 @@ class Processor:
         return self.reader.read(path)
 
     def summarize(self, document: Document) -> Counts:
-        """문서 전체 분량을 계산한다."""
-        return self.counter.count_paragraphs(document.paragraphs)
+        """문서 전체 분량을 계산한다(표 포함)."""
+        return self.counter.count_blocks(document.blocks)
 
     def split_document(
         self, document: Document, options: SplitOptions
-    ) -> List[List[str]]:
-        """옵션에 따라 문서를 분권한다."""
+    ) -> List[List["Block"]]:
+        """옵션에 따라 문서를 분권한다(블록 단위)."""
         if options.mode == SplitMode.SEPARATOR:
             return self.splitter.split_by_separator(
-                document.paragraphs,
+                document.blocks,
                 separator=options.separator,
                 include_separator=options.include_separator,
                 remove_separator=options.remove_separator,
             )
         elif options.mode == SplitMode.CHAR_COUNT:
             return self.splitter.split_by_char_count(
-                document.paragraphs,
+                document.blocks,
                 limit=options.count_limit,
                 with_spaces=options.char_count_with_spaces,
             )
         elif options.mode == SplitMode.WORD_COUNT:
             return self.splitter.split_by_word_count(
-                document.paragraphs,
+                document.blocks,
                 limit=options.count_limit,
             )
         raise ValueError(f"알 수 없는 분권 방식: {options.mode}")
@@ -146,7 +146,7 @@ class Processor:
         file_result = FileResult(source_path=path, output_dir=output_dir)
         total = len(chunks)
         for i, (chunk, wr) in enumerate(zip(chunks, write_results), start=1):
-            counts = self.counter.count_paragraphs(chunk)
+            counts = self.counter.count_blocks(chunk)
             file_result.chunks.append(
                 ChunkResult(
                     index=wr.index,

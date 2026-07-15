@@ -68,6 +68,22 @@ class Counter:
             lines=len(paragraphs),
         )
 
+    def count_blocks(self, blocks) -> Counts:
+        """
+        블록(문단/표) 리스트의 분량을 계산한다.
+        표 안의 텍스트까지 포함하여 집계하며, 줄수는 각 블록의
+        line_count() 합으로 계산한다(표는 행 수만큼 기여).
+        """
+        joined = "\n".join(b.count_text() for b in blocks)
+        chars_with = len(joined)
+        chars_without = len(_WHITESPACE_RE.sub("", joined))
+        return Counts(
+            chars_with_spaces=chars_with,
+            chars_without_spaces=chars_without,
+            words=self.count_words(joined),
+            lines=sum(b.line_count() for b in blocks),
+        )
+
     # ------------------------------------------------------------------ #
     # 개별 지표 계산 (분권 로직에서도 재사용)
     # ------------------------------------------------------------------ #

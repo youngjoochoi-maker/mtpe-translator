@@ -53,7 +53,7 @@ class Writer:
     def write_chunks(
         self,
         document: Document,
-        chunks: List[List[str]],
+        chunks: List[List["Block"]],
         output_dir: str,
         number_position: str = "suffix",
         overwrite: bool = False,
@@ -100,22 +100,26 @@ class Writer:
     # 형식별 저장 구현
     # ------------------------------------------------------------------ #
     @staticmethod
-    def _write_docx(paragraphs: List[str], path: str) -> None:
-        """문단 리스트를 새 docx 파일로 저장한다."""
+    def _write_docx(blocks: List["Block"], path: str) -> None:
+        """
+        블록 리스트를 새 docx 파일로 저장한다.
+        문단은 문단으로, 표는 표(테두리 포함)로 다시 작성하여
+        원본의 표 구조를 보존한다.
+        """
         from docx import Document as DocxDocument
 
         doc = DocxDocument()
-        for para in paragraphs:
-            doc.add_paragraph(para)
+        for block in blocks:
+            block.write_docx(doc)
         doc.save(path)
 
     @staticmethod
-    def _write_txt(paragraphs: List[str], path: str, encoding: str) -> None:
+    def _write_txt(blocks: List["Block"], path: str, encoding: str) -> None:
         """
-        문단 리스트를 txt 파일로 저장한다.
+        블록 리스트를 txt 파일로 저장한다(표는 탭 구분 TSV).
         원본 인코딩을 유지하되, 실패 시 UTF-8 로 대체한다.
         """
-        text = "\n".join(paragraphs)
+        text = "\n".join(block.to_txt() for block in blocks)
         try:
             with open(path, "w", encoding=encoding, newline="") as f:
                 f.write(text)

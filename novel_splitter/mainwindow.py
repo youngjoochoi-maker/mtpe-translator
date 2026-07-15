@@ -357,7 +357,7 @@ class MainWindow(QWidget):
         """파일의 전체 분량을 계산하여 파일 표에 한 줄 추가한다."""
         try:
             document = self._processor.analyze(path)
-            counts: Counts = self._counter.count_paragraphs(document.paragraphs)
+            counts: Counts = self._counter.count_blocks(document.blocks)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "읽기 오류", f"{os.path.basename(path)}\n{exc}")
             self._files.remove(path)

@@ -3,18 +3,20 @@ splitter.py
 -----------
 문서를 여러 분권(chunk)으로 나누는 로직.
 
-세 가지 분권 방식을 지원한다.
-1) 구분자 기준 : 특정 문자열로 시작하는 줄에서 분권
-2) 글자수 기준 : 누적 글자수가 기준 이상이 되면 분권(문단 경계에서만)
-3) 단어수 기준 : 누적 단어수가 기준 이상이 되면 분권(문단 경계에서만)
+문서는 '블록(Block) 리스트'로 주어지며(문단/표), 각 분권도 블록 리스트다.
+splitter 는 이 블록 리스트들의 리스트를 반환한다.
 
-각 분권은 '문단(문자열) 리스트' 이며, splitter 는 이 리스트들의 리스트를 반환한다.
+세 가지 분권 방식을 지원한다.
+1) 구분자 기준 : 특정 문자열로 시작하는 '문단'에서 분권 (표는 경계로 쓰지 않음)
+2) 글자수 기준 : 누적 글자수가 기준 이상이 되면 분권(블록 경계에서만)
+3) 단어수 기준 : 누적 단어수가 기준 이상이 되면 분권(블록 경계에서만)
 """
 
 from __future__ import annotations
 
 from typing import List
 
+from .blocks import Block, ParagraphBlock
 from .counter import Counter
 
 
@@ -29,38 +31,40 @@ class Splitter:
     # ------------------------------------------------------------------ #
     def split_by_separator(
         self,
-        paragraphs: List[str],
+        blocks: List[Block],
         separator: str,
         include_separator: bool = True,
         remove_separator: bool = False,
-    ) -> List[List[str]]:
+    ) -> List[List[Block]]:
         """
-        구분자로 '시작하는' 줄에서 새로운 분권을 시작한다.
+        구분자로 '시작하는' 문단에서 새로운 분권을 시작한다.
 
         Parameters
         ----------
-        paragraphs : 원본 문단(줄) 리스트
+        blocks : 원본 블록 리스트
         separator : 분권 기준 문자열 (예: 'Chapter', '###', '===')
-        include_separator : 구분자 줄을 결과 파일에 포함할지 여부
-            - True  : 구분자 줄을 유지
-            - False : 구분자 줄을 결과에서 제거
-        remove_separator : 구분자 '문자열'만 줄 앞에서 제거할지 여부
-            - True  : '###제목' -> '제목' (include_separator 가 True 일 때만 의미 있음)
+        include_separator : 구분자 문단을 결과 파일에 포함할지 여부
+        remove_separator : 구분자 '문자열'만 문단 앞에서 제거할지 여부
+            - True : '###제목' -> '제목'
 
         Notes
         -----
-        - 첫 구분자 이전에 내용이 있으면 그 부분도 하나의 분권(머리말)이 된다.
-        - 앞뒤 공백을 무시하고 startswith 로 판정한다.
+        - 표(TableBlock)는 대표 텍스트가 없으므로 절대 분권 경계가 되지 않고,
+          직전 문단이 속한 분권에 그대로 포함된다.
+        - 첫 구분자 이전 내용이 있으면 그 부분도 하나의 분권(머리말)이 된다.
         """
         if not separator:
             raise ValueError("구분자를 입력하세요.")
 
-        chunks: List[List[str]] = []
-        current: List[str] = []
+        chunks: List[List[Block]] = []
+        current: List[Block] = []
 
-        for line in paragraphs:
-            # 앞쪽 공백을 제거한 뒤 구분자로 시작하는지 확인
-            is_boundary = line.lstrip().startswith(separator)
+        for block in blocks:
+            # 문단이면서 구분자로 시작하는 경우에만 경계로 판정한다.
+            is_boundary = (
+                isinstance(block, ParagraphBlock)
+                and block.text.lstrip().startswith(separator)
+            )
 
             if is_boundary:
                 # 지금까지 모은 내용이 있으면 하나의 분권으로 확정
@@ -68,15 +72,19 @@ class Splitter:
                     chunks.append(current)
                 current = []
 
-                # 구분자 줄 자체의 처리
+                # 구분자 문단 자체의 처리
                 if include_separator:
                     if remove_separator:
-                        current.append(self._strip_separator(line, separator))
+                        current.append(
+                            ParagraphBlock(
+                                text=self._strip_separator(block.text, separator)
+                            )
+                        )
                     else:
-                        current.append(line)
-                # include_separator=False 이면 구분자 줄은 버린다.
+                        current.append(block)
+                # include_separator=False 이면 구분자 문단은 버린다.
             else:
-                current.append(line)
+                current.append(block)
 
         # 마지막 분권 추가
         if current:
@@ -84,21 +92,19 @@ class Splitter:
 
         # 아무 구분자도 찾지 못한 경우 전체를 한 개의 분권으로 반환
         if not chunks:
-            chunks = [list(paragraphs)]
+            chunks = [list(blocks)]
 
         return chunks
 
     @staticmethod
     def _strip_separator(line: str, separator: str) -> str:
         """
-        줄 앞쪽의 공백과 구분자 문자열을 제거하고 나머지를 반환한다.
+        문단 앞쪽의 공백과 구분자 문자열을 제거하고 나머지를 반환한다.
         예) '  ###제목' , sep='###' -> '제목'
         """
         stripped = line.lstrip()
-        leading_ws = line[: len(line) - len(stripped)]  # 앞 공백 보존 후보(사용 안 함)
         if stripped.startswith(separator):
             remainder = stripped[len(separator):]
-            # 구분자 뒤에 붙은 공백도 정리
             return remainder.lstrip()
         return line
 
@@ -107,13 +113,13 @@ class Splitter:
     # ------------------------------------------------------------------ #
     def split_by_char_count(
         self,
-        paragraphs: List[str],
+        blocks: List[Block],
         limit: int,
         with_spaces: bool = True,
-    ) -> List[List[str]]:
+    ) -> List[List[Block]]:
         """
         누적 글자수가 limit 이상이 되면 분권한다.
-        문단(줄) 단위로만 자르므로 문장 중간에서 잘리지 않는다.
+        블록(문단/표) 단위로만 자르므로 문장 중간에서 잘리지 않는다.
 
         Parameters
         ----------
@@ -123,50 +129,54 @@ class Splitter:
         if limit <= 0:
             raise ValueError("글자수 기준은 1 이상이어야 합니다.")
 
-        def measure(text: str) -> int:
+        def measure(block: Block) -> int:
+            text = block.count_text()
             return (
                 self._counter.count_chars_with_spaces(text)
                 if with_spaces
                 else self._counter.count_chars_without_spaces(text)
             )
 
-        return self._accumulate(paragraphs, limit, measure)
+        return self._accumulate(blocks, limit, measure)
 
     # ------------------------------------------------------------------ #
     # 3) 단어수 기준
     # ------------------------------------------------------------------ #
     def split_by_word_count(
         self,
-        paragraphs: List[str],
+        blocks: List[Block],
         limit: int,
-    ) -> List[List[str]]:
+    ) -> List[List[Block]]:
         """
         누적 단어수가 limit 이상이 되면 분권한다.
-        문단(줄) 단위로만 자른다.
+        블록(문단/표) 단위로만 자른다.
         """
         if limit <= 0:
             raise ValueError("단어수 기준은 1 이상이어야 합니다.")
 
-        return self._accumulate(paragraphs, limit, self._counter.count_words)
+        def measure(block: Block) -> int:
+            return self._counter.count_words(block.count_text())
+
+        return self._accumulate(blocks, limit, measure)
 
     # ------------------------------------------------------------------ #
     # 공통: 누적 기반 분권
     # ------------------------------------------------------------------ #
     @staticmethod
-    def _accumulate(paragraphs, limit, measure):
+    def _accumulate(blocks, limit, measure):
         """
-        measure(문단) 값을 누적하며 limit 이상이 되면 분권을 확정한다.
+        measure(블록) 값을 누적하며 limit 이상이 되면 분권을 확정한다.
 
-        하나의 문단만으로 limit 을 초과하는 경우에도 문장 중간을 자르지 않고
-        그 문단을 하나의 분권으로 처리한다.
+        하나의 블록만으로 limit 을 초과하는 경우에도 내용을 중간에서
+        자르지 않고 그 블록을 하나의 분권으로 처리한다.
         """
-        chunks: List[List[str]] = []
-        current: List[str] = []
+        chunks: List[List[Block]] = []
+        current: List[Block] = []
         running = 0
 
-        for para in paragraphs:
-            current.append(para)
-            running += measure(para)
+        for block in blocks:
+            current.append(block)
+            running += measure(block)
 
             # 기준 이상이 되면 현재까지를 하나의 분권으로 확정하고 초기화
             if running >= limit:
