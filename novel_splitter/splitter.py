@@ -14,10 +14,34 @@ splitter 는 이 블록 리스트들의 리스트를 반환한다.
 
 from __future__ import annotations
 
-from typing import List
+import re
+from typing import Callable, List
 
 from .blocks import Block, ParagraphBlock
 from .counter import Counter
+
+# 문장 종료 부호(마침표/물음표/느낌표/말줄임표, 전각 포함) + 뒤따르는 닫는 따옴표·괄호와 공백.
+# 이 패턴으로 문단을 문장 단위로 나눈다(문장 중간은 절대 자르지 않기 위함).
+_SENTENCE_END_RE = re.compile(r'[.!?…。！？]+["\'”’」』)\]]*\s*')
+
+
+def split_sentences(text: str) -> List[str]:
+    """
+    문단 텍스트를 문장 리스트로 나눈다.
+    각 조각은 종료 부호와 뒤 공백까지 포함하므로, 이어 붙이면 원문이 그대로 복원된다.
+    종료 부호가 없으면 전체가 한 문장이 된다.
+    """
+    if not text:
+        return []
+    sentences: List[str] = []
+    start = 0
+    for m in _SENTENCE_END_RE.finditer(text):
+        end = m.end()
+        sentences.append(text[start:end])
+        start = end
+    if start < len(text):
+        sentences.append(text[start:])
+    return sentences
 
 
 class Splitter:
@@ -129,15 +153,14 @@ class Splitter:
         if limit <= 0:
             raise ValueError("글자수 기준은 1 이상이어야 합니다.")
 
-        def measure(block: Block) -> int:
-            text = block.count_text()
+        def measure_text(text: str) -> int:
             return (
                 self._counter.count_chars_with_spaces(text)
                 if with_spaces
                 else self._counter.count_chars_without_spaces(text)
             )
 
-        return self._accumulate(blocks, limit, measure)
+        return self._accumulate(blocks, limit, measure_text)
 
     # ------------------------------------------------------------------ #
     # 3) 단어수 기준
@@ -154,38 +177,73 @@ class Splitter:
         if limit <= 0:
             raise ValueError("단어수 기준은 1 이상이어야 합니다.")
 
-        def measure(block: Block) -> int:
-            return self._counter.count_words(block.count_text())
-
-        return self._accumulate(blocks, limit, measure)
+        return self._accumulate(blocks, limit, self._counter.count_words)
 
     # ------------------------------------------------------------------ #
-    # 공통: 누적 기반 분권
+    # 공통: 누적 기반 분권 (문장 단위 보정)
     # ------------------------------------------------------------------ #
     @staticmethod
-    def _accumulate(blocks, limit, measure):
+    def _accumulate(
+        blocks: List[Block],
+        limit: int,
+        measure_text: Callable[[str], int],
+    ) -> List[List[Block]]:
         """
-        measure(블록) 값을 누적하며 limit 이상이 되면 분권을 확정한다.
+        measure_text(문자열) 값을 누적하며 limit 이상이 되면 분권을 확정한다.
 
-        하나의 블록만으로 limit 을 초과하는 경우에도 내용을 중간에서
-        자르지 않고 그 블록을 하나의 분권으로 처리한다.
+        핵심: 문단이 기준보다 길면 문단 경계에서만 자르지 않고 '문장 경계'에서
+        나눈다. 덕분에 각 분권이 기준에 훨씬 가깝게 맞춰지며,
+        문장 중간은 절대 잘리지 않는다.
+
+        - 문단(ParagraphBlock): 문장 단위로 채우되, 한 분권 안에 들어간
+          같은 문단의 문장들은 다시 하나의 문단으로 합쳐 원본 구조를 보존한다.
+        - 표(TableBlock) 등: 쪼갤 수 없으므로 통째로 배치한다(불가피한 초과 허용).
+        - 종료 부호 없는 매우 긴 한 문장은 자르지 않으므로 초과할 수 있다.
         """
         chunks: List[List[Block]] = []
         current: List[Block] = []
+        pending: List[str] = []  # 현재 문단에서 현재 분권에 쌓이는 문장들
         running = 0
 
-        for block in blocks:
-            current.append(block)
-            running += measure(block)
+        def flush_pending() -> None:
+            """쌓인 문장들을 하나의 문단으로 합쳐 현재 분권에 넣는다."""
+            nonlocal pending
+            if pending:
+                current.append(ParagraphBlock(text="".join(pending)))
+                pending = []
 
-            # 기준 이상이 되면 현재까지를 하나의 분권으로 확정하고 초기화
-            if running >= limit:
+        def close_chunk() -> None:
+            """현재 분권을 확정하고 초기화한다."""
+            nonlocal current, running
+            flush_pending()
+            if current:
                 chunks.append(current)
-                current = []
-                running = 0
+            current = []
+            running = 0
+
+        for block in blocks:
+            if isinstance(block, ParagraphBlock):
+                sentences = split_sentences(block.text)
+                if not sentences:
+                    # 빈 줄(빈 문단)도 구조 보존을 위해 그대로 유지
+                    sentences = [block.text]
+                for sent in sentences:
+                    pending.append(sent)
+                    running += measure_text(sent)
+                    # 기준 이상이 되면 현재까지를 한 분권으로 확정
+                    if running >= limit:
+                        close_chunk()
+                # 문단이 끝나면 남은 문장들을 하나의 문단으로 확정(문단 경계 보존)
+                flush_pending()
+            else:
+                # 표 등 쪼갤 수 없는 블록: 통째로 배치
+                flush_pending()
+                current.append(block)
+                running += measure_text(block.count_text())
+                if running >= limit:
+                    close_chunk()
 
         # 남은 내용(기준 미달)도 마지막 분권으로 추가
-        if current:
-            chunks.append(current)
+        close_chunk()
 
         return chunks
