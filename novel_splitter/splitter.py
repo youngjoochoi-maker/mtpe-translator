@@ -20,9 +20,13 @@ from typing import Callable, List
 from .blocks import Block, ParagraphBlock, TableBlock
 from .counter import Counter
 
-# 문장 종료 부호(마침표/물음표/느낌표/말줄임표, 전각 포함) + 뒤따르는 닫는 따옴표·괄호와 공백.
+# 문장 종료 부호(마침표/물음표/느낌표/말줄임표, 전각 포함) + 뒤따르는 닫는 따옴표·괄호.
 # 이 패턴으로 문단을 문장 단위로 나눈다(문장 중간은 절대 자르지 않기 위함).
-_SENTENCE_END_RE = re.compile(r'[.!?…。！？]+["\'”’」』)\]]*\s*')
+#
+# 핵심: 종료 부호 '뒤에 공백 또는 문장 끝'이 와야만 문장 경계로 인정한다((?=\s|$)).
+# 이렇게 하지 않으면 소수점(3.5), 천단위 숫자(1,200.50), 약어·URL(Mr.Kim,
+# www.site.com) 의 마침표를 문장 끝으로 오인해 숫자/단어 중간을 잘라버린다.
+_SENTENCE_END_RE = re.compile(r'[.!?…。！？]+["\'”’」』)\]]*(?=\s|$)\s*')
 
 
 def split_sentences(text: str) -> List[str]:
