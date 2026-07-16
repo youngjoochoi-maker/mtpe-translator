@@ -4,10 +4,18 @@
 # 빌드:
 #   pyinstaller novel_splitter.spec --noconfirm
 # 결과:
-#   Windows -> dist/소설분권.exe
-#   macOS   -> dist/소설분권.app  (및 dist/소설분권 실행 파일)
+#   Windows -> dist/소설분권.exe   (단일 파일, 설치 불필요)
+#   macOS   -> dist/소설분권.app   (앱 번들)
+#
+# 주의: PyInstaller 는 크로스 컴파일을 지원하지 않는다.
+#       Windows .exe 는 반드시 Windows 에서 빌드해야 한다
+#       (저장소의 GitHub Actions 워크플로가 이를 자동 수행).
+
+import sys
 
 from PyInstaller.utils.hooks import collect_all
+
+IS_WINDOWS = sys.platform == "win32"
 
 datas = []
 binaries = []
@@ -43,44 +51,66 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-# onedir 모드: macOS .app 번들 권장 방식(실행 안정·속도 개선)
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,   # 바이너리는 COLLECT 로 분리 (onedir)
-    name="소설분권",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,           # GUI 앱 (콘솔 창 없음)
-    disable_windowed_traceback=False,
-    argv_emulation=False,    # LaunchServices(더블클릭) 실행 시 조기 종료 방지
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
+if IS_WINDOWS:
+    # Windows: 단일 실행 파일(onefile). 설치 없이 exe 하나만 받아 실행하면 된다.
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name="소설분권",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=False,          # GUI 앱 (콘솔 창 없음)
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+else:
+    # macOS: onedir + .app 번들 (권장 방식, 실행 안정·속도 개선)
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,   # 바이너리는 COLLECT 로 분리 (onedir)
+        name="소설분권",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=False,           # GUI 앱 (콘솔 창 없음)
+        disable_windowed_traceback=False,
+        argv_emulation=False,    # LaunchServices(더블클릭) 실행 시 조기 종료 방지
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name="소설분권",
-)
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        name="소설분권",
+    )
 
-# macOS 앱 번들
-app = BUNDLE(
-    coll,
-    name="소설분권.app",
-    icon=None,
-    bundle_identifier="com.voithru.novelsplitter",
-    info_plist={
-        "CFBundleName": "소설분권",
-        "CFBundleDisplayName": "소설 분권 프로그램",
-        "NSHighResolutionCapable": True,
-    },
-)
+    app = BUNDLE(
+        coll,
+        name="소설분권.app",
+        icon=None,
+        bundle_identifier="com.voithru.novelsplitter",
+        info_plist={
+            "CFBundleName": "소설분권",
+            "CFBundleDisplayName": "소설 분권 프로그램",
+            "NSHighResolutionCapable": True,
+        },
+    )
