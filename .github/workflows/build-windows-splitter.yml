@@ -13,6 +13,11 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    # 저장소 기본 워크플로 권한이 'read' 라서, Release 생성을 위해
+    # contents: write 를 이 워크플로에만 명시적으로 부여한다.
+    # (없으면 Release 첨부 단계가 "Resource not accessible by integration" 로 실패)
+    permissions:
+      contents: write
     steps:
       - name: 체크아웃
         uses: actions/checkout@v4
