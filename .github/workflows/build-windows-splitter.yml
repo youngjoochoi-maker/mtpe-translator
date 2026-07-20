@@ -48,9 +48,16 @@ jobs:
           path: dist/소설분권.exe
           if-no-files-found: error
 
+      # Release 첨부용 사본을 ASCII 이름으로 만든다.
+      # (한글 파일명을 그대로 올리면 Release 자산명이 'default.exe' 로 깨짐)
+      - name: Release용 사본 준비
+        if: startsWith(github.ref, 'refs/tags/splitter-v')
+        shell: bash
+        run: cp "dist/소설분권.exe" "dist/NovelSplitter.exe"
+
       # 태그(splitter-v*) 푸시면 Release 에도 첨부
       - name: Release 첨부
         if: startsWith(github.ref, 'refs/tags/splitter-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/소설분권.exe
+          files: dist/NovelSplitter.exe
