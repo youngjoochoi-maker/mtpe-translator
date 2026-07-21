@@ -70,17 +70,29 @@ class Counter:
 
     def count_blocks(self, blocks) -> Counts:
         """
-        블록(문단/표) 리스트의 분량을 계산한다.
-        표 안의 텍스트까지 포함하여 집계하며, 줄수는 각 블록의
-        line_count() 합으로 계산한다(표는 행 수만큼 기여).
+        블록(문단/표) 리스트의 분량을 MS Word 방식과 일치하도록 계산한다.
+
+        핵심: 문단 사이의 문단 부호(¶)나 표의 셀 경계는 글자로 세지 않는다.
+        각 블록이 내주는 '텍스트 단위'(text_units) 별로 글자수/단어수를
+        따로 세어 합산하므로, 인위적 줄바꿈/탭이 글자수에 포함되지 않는다.
+
+        - 공백포함 글자수 : 각 단위 텍스트 길이의 합
+        - 공백제외 글자수 : 각 단위에서 공백류를 제거한 길이의 합
+        - 단어수         : 각 단위의 단어수 합(단어는 문단/셀을 넘지 않음)
+        - 줄수           : 각 블록 line_count() 합(표는 행 수)
         """
-        joined = "\n".join(b.count_text() for b in blocks)
-        chars_with = len(joined)
-        chars_without = len(_WHITESPACE_RE.sub("", joined))
+        chars_with = 0
+        chars_without = 0
+        words = 0
+        for block in blocks:
+            for unit in block.text_units():
+                chars_with += len(unit)
+                chars_without += len(_WHITESPACE_RE.sub("", unit))
+                words += self.count_words(unit)
         return Counts(
             chars_with_spaces=chars_with,
             chars_without_spaces=chars_without,
-            words=self.count_words(joined),
+            words=words,
             lines=sum(b.line_count() for b in blocks),
         )
 

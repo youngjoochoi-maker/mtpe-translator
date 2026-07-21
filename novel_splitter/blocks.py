@@ -35,6 +35,18 @@ class Block:
         """분량 계산에 사용할 전체 텍스트."""
         raise NotImplementedError
 
+    def text_units(self) -> "list[str]":
+        """
+        분량 계산 시 사용할 '텍스트 단위' 목록.
+
+        MS Word 는 문단 부호(¶)나 표의 셀 경계를 글자로 세지 않는다.
+        따라서 인위적 구분자(줄바꿈/탭) 없이, Word 가 실제로 세는
+        텍스트 조각들만 반환한다.
+        - 문단: [문단 텍스트]
+        - 표  : [셀1, 셀2, ...] (모든 셀 텍스트)
+        """
+        raise NotImplementedError
+
     def line_count(self) -> int:
         """줄수 계산 시 이 블록이 차지하는 줄 수."""
         raise NotImplementedError
@@ -56,6 +68,9 @@ class ParagraphBlock(Block):
 
     def count_text(self) -> str:
         return self.text
+
+    def text_units(self) -> "list[str]":
+        return [self.text]
 
     def line_count(self) -> int:
         return 1
@@ -82,6 +97,10 @@ class TableBlock(Block):
     def count_text(self) -> str:
         """모든 셀 텍스트를 이어 붙여 분량 계산에 사용한다(탭/개행 구분)."""
         return "\n".join("\t".join(cell for cell in row) for row in self.rows)
+
+    def text_units(self) -> "list[str]":
+        """표의 모든 셀 텍스트를 개별 단위로 반환한다(셀 경계는 글자로 안 셈)."""
+        return [cell for row in self.rows for cell in row]
 
     def line_count(self) -> int:
         """표의 줄수는 행 수로 계산한다."""
