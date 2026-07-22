@@ -57,6 +57,7 @@ class ChunkResult:
     path: str
     counts: Counts
     skipped: bool = False
+    title: str = ""  # 회차 제목(각 분권의 첫 비어있지 않은 줄) - 플랫폼 대조용
 
 
 @dataclass
@@ -154,9 +155,20 @@ class Processor:
                     path=wr.path,
                     counts=counts,
                     skipped=wr.skipped,
+                    title=self._chunk_title(chunk),
                 )
             )
             if progress_cb:
                 progress_cb(i, total, wr.filename)
 
         return file_result
+
+    @staticmethod
+    def _chunk_title(chunk) -> str:
+        """분권의 '회차 제목'으로 쓸 첫 비어있지 않은 텍스트 줄을 반환한다."""
+        for block in chunk:
+            for unit in block.text_units():
+                text = unit.strip()
+                if text:
+                    return text
+        return ""

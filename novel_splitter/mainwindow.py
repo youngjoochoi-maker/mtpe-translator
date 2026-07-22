@@ -47,6 +47,13 @@ from PySide6.QtWidgets import (
 
 from .counter import Counter, Counts
 from .exporter import ExcelExporter
+from .platform_fetcher import (
+    Comparison,
+    PlatformError,
+    PlatformFetcher,
+    PlatformResult,
+    compare_titles,
+)
 from .processor import FileResult, Processor, SplitMode, SplitOptions
 from .utils import get_stem, is_supported_file
 
@@ -107,6 +114,29 @@ class Worker(QObject):
 
 
 # ---------------------------------------------------------------------------- #
+# 플랫폼 회차 수집 백그라운드 워커
+# ---------------------------------------------------------------------------- #
+class FetchWorker(QObject):
+    """네트워크로 플랫폼 회차 목록을 가져오는 워커(UI 멈춤 방지)."""
+
+    done = Signal(object)   # PlatformResult
+    error = Signal(str)
+
+    def __init__(self, url: str) -> None:
+        super().__init__()
+        self._url = url
+
+    def run(self) -> None:
+        try:
+            result = PlatformFetcher().fetch(self._url)
+            self.done.emit(result)
+        except PlatformError as exc:
+            self.error.emit(str(exc))
+        except Exception as exc:  # noqa: BLE001
+            self.error.emit(f"수집 중 오류가 발생했습니다: {exc}")
+
+
+# ---------------------------------------------------------------------------- #
 # 메인 윈도우
 # ---------------------------------------------------------------------------- #
 class MainWindow(QWidget):
@@ -125,6 +155,11 @@ class MainWindow(QWidget):
         self._thread: QThread | None = None
         self._worker: Worker | None = None
         self._results: List[FileResult] = []   # 처리 결과 누적
+
+        # 플랫폼 회차 대조용
+        self._fetch_thread: QThread | None = None
+        self._fetch_worker: FetchWorker | None = None
+        self._platform_result: PlatformResult | None = None
 
         self._build_ui()
 
@@ -155,10 +190,12 @@ class MainWindow(QWidget):
 
         splitter.addWidget(top_scroll)
         splitter.addWidget(self._build_result_section())
+        splitter.addWidget(self._build_platform_section())
         # 결과 영역이 넓어지는 방향으로 크기 배분
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([540, 460])
+        splitter.setStretchFactor(2, 1)
+        splitter.setSizes([500, 340, 300])
 
         root.addWidget(splitter)
 
@@ -342,6 +379,50 @@ class MainWindow(QWidget):
         self.total_label = QLabel("총합: -")
         self.total_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(self.total_label)
+
+        return box
+
+    # --- 6) 플랫폼 회차 대조 영역 --------------------------------------- #
+    def _build_platform_section(self) -> QGroupBox:
+        box = QGroupBox("⑥ 플랫폼 회차 대조 (네이버 시리즈)")
+        layout = QVBoxLayout(box)
+
+        # URL 입력 줄
+        url_row = QHBoxLayout()
+        url_row.addWidget(QLabel("작품 URL:"))
+        self.url_input = QLineEdit()
+        self.url_input.setPlaceholderText(
+            "네이버 시리즈 작품 URL 붙여넣기 (예: https://series.naver.com/novel/detail.series?productNo=...)"
+        )
+        url_row.addWidget(self.url_input, stretch=1)
+        self.btn_fetch = QPushButton("가져와서 대조")
+        self.btn_fetch.clicked.connect(self._on_fetch_platform)
+        url_row.addWidget(self.btn_fetch)
+        layout.addLayout(url_row)
+
+        # 요약 라벨
+        self.platform_summary = QLabel(
+            "분권을 실행한 뒤, 위에 작품 URL을 넣고 [가져와서 대조]를 누르세요. "
+            "회차 수와 제목을 플랫폼 연재분과 비교합니다."
+        )
+        self.platform_summary.setWordWrap(True)
+        self.platform_summary.setStyleSheet("color: gray;")
+        layout.addWidget(self.platform_summary)
+
+        # 대조 표
+        self.compare_table = QTableWidget(0, 4)
+        self.compare_table.setHorizontalHeaderLabels(
+            ["번호", "우리 분권 제목", "플랫폼 회차", "일치"]
+        )
+        self.compare_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.compare_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.Stretch
+        )
+        self.compare_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.Stretch
+        )
+        self.compare_table.setMinimumHeight(180)
+        layout.addWidget(self.compare_table, stretch=1)
 
         return box
 
@@ -611,6 +692,88 @@ class MainWindow(QWidget):
 
         self._log(f"Excel 저장 완료: {path}")
         QMessageBox.information(self, "완료", f"Excel 파일로 저장했습니다.\n{path}")
+
+    # ------------------------------------------------------------------ #
+    # 플랫폼 회차 대조
+    # ------------------------------------------------------------------ #
+    def _on_fetch_platform(self) -> None:
+        """작품 URL 로 플랫폼 회차 목록을 가져와 대조한다."""
+        url = self.url_input.text().strip()
+        if not url:
+            QMessageBox.warning(self, "확인", "작품 URL 을 입력하세요.")
+            return
+
+        self.btn_fetch.setEnabled(False)
+        self.platform_summary.setText("회차 목록을 가져오는 중입니다...")
+
+        self._fetch_thread = QThread()
+        self._fetch_worker = FetchWorker(url)
+        self._fetch_worker.moveToThread(self._fetch_thread)
+        self._fetch_thread.started.connect(self._fetch_worker.run)
+        self._fetch_worker.done.connect(self._on_platform_done)
+        self._fetch_worker.error.connect(self._on_platform_error)
+        self._fetch_thread.start()
+
+    def _on_platform_done(self, result: PlatformResult) -> None:
+        """수집 성공 시 우리 분권 결과와 대조하여 표시한다."""
+        self._platform_result = result
+        self._cleanup_fetch_thread()
+        self.btn_fetch.setEnabled(True)
+
+        # 우리 분권 제목(각 분권 첫 줄) 목록 - 건너뛴 분권 제외
+        our_titles = [
+            c.title for fr in self._results for c in fr.chunks if not c.skipped
+        ]
+        comparison: Comparison = compare_titles(our_titles, result)
+
+        # 요약
+        mark = "✅ 일치" if comparison.count_match else "❌ 불일치"
+        self.platform_summary.setText(
+            f"작품: {result.work_title or '(제목 미확인)'}  |  "
+            f"플랫폼 회차 {comparison.platform_count}개  vs  "
+            f"우리 분권 {comparison.our_count}개  →  회차 수 {mark}"
+        )
+        if not self._results:
+            self.platform_summary.setText(
+                self.platform_summary.text()
+                + "   (분권을 먼저 실행하면 제목까지 나란히 대조됩니다)"
+            )
+
+        # 대조 표 채우기
+        self.compare_table.setRowCount(0)
+        for row in comparison.rows:
+            r = self.compare_table.rowCount()
+            self.compare_table.insertRow(r)
+            self.compare_table.setItem(r, 0, QTableWidgetItem(str(row.no)))
+            self.compare_table.setItem(r, 1, QTableWidgetItem(row.our_title))
+            self.compare_table.setItem(r, 2, QTableWidgetItem(row.platform_title))
+            # 일치 표시: 제목이 있을 때만 O/X, 한쪽이 비면 누락 표시
+            if not row.our_title and row.platform_title:
+                mark_item = QTableWidgetItem("우리 측 없음")
+            elif row.our_title and not row.platform_title:
+                mark_item = QTableWidgetItem("플랫폼 측 없음")
+            else:
+                mark_item = QTableWidgetItem("O" if row.title_match else "△")
+            mark_item.setTextAlignment(Qt.AlignCenter)
+            self.compare_table.setItem(r, 3, mark_item)
+
+        self._log(
+            f"플랫폼 대조: {result.work_title} - 플랫폼 {comparison.platform_count}회차, "
+            f"우리 {comparison.our_count}분권"
+        )
+
+    def _on_platform_error(self, message: str) -> None:
+        self._cleanup_fetch_thread()
+        self.btn_fetch.setEnabled(True)
+        self.platform_summary.setText("가져오기 실패")
+        QMessageBox.warning(self, "가져오기 실패", message)
+
+    def _cleanup_fetch_thread(self) -> None:
+        if self._fetch_thread:
+            self._fetch_thread.quit()
+            self._fetch_thread.wait()
+            self._fetch_thread = None
+            self._fetch_worker = None
 
     # ------------------------------------------------------------------ #
     # 보조
