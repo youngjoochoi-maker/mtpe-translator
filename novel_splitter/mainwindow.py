@@ -16,6 +16,7 @@ PySide6 기반 메인 GUI.
 from __future__ import annotations
 
 import os
+import re
 from typing import List
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
@@ -398,6 +399,11 @@ class MainWindow(QWidget):
         self.btn_fetch = QPushButton("가져와서 대조")
         self.btn_fetch.clicked.connect(self._on_fetch_platform)
         url_row.addWidget(self.btn_fetch)
+        # 가져온 회차 목록을 Excel 로 저장(분권 전 확인용). 수집 성공 후 활성화.
+        self.btn_export_platform = QPushButton("회차 목록 Excel 저장")
+        self.btn_export_platform.clicked.connect(self._on_export_platform_excel)
+        self.btn_export_platform.setEnabled(False)
+        url_row.addWidget(self.btn_export_platform)
         layout.addLayout(url_row)
 
         # 요약 라벨
@@ -719,6 +725,8 @@ class MainWindow(QWidget):
         self._platform_result = result
         self._cleanup_fetch_thread()
         self.btn_fetch.setEnabled(True)
+        # 회차 목록을 가져왔으므로 Excel 저장 활성화
+        self.btn_export_platform.setEnabled(bool(result.episodes))
 
         # 우리 분권 제목(각 분권 첫 줄) 목록 - 건너뛴 분권 제외
         our_titles = [
@@ -767,6 +775,37 @@ class MainWindow(QWidget):
         self.btn_fetch.setEnabled(True)
         self.platform_summary.setText("가져오기 실패")
         QMessageBox.warning(self, "가져오기 실패", message)
+
+    def _on_export_platform_excel(self) -> None:
+        """가져온 플랫폼 회차 목록을 Excel(.xlsx)로 저장한다(분권 전 확인용)."""
+        if not self._platform_result or not self._platform_result.episodes:
+            QMessageBox.warning(self, "확인", "먼저 작품 URL로 회차 목록을 가져오세요.")
+            return
+
+        title = self._platform_result.work_title or "회차목록"
+        # 파일명에 쓸 수 없는 문자를 정리
+        safe = re.sub(r'[\\/:*?"<>|]', "_", title).strip() or "회차목록"
+        default_path = os.path.join(
+            os.path.expanduser("~"), f"{safe}_플랫폼회차목록.xlsx"
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "회차 목록 Excel로 저장", default_path, "Excel 파일 (*.xlsx)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+
+        try:
+            ExcelExporter().export_platform(self._platform_result, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(
+                self, "내보내기 오류", f"Excel 저장 중 오류가 발생했습니다.\n{exc}"
+            )
+            return
+
+        self._log(f"플랫폼 회차 목록 저장 완료: {path}")
+        QMessageBox.information(self, "완료", f"회차 목록을 저장했습니다.\n{path}")
 
     def _cleanup_fetch_thread(self) -> None:
         if self._fetch_thread:
