@@ -40,15 +40,17 @@ jobs:
         shell: bash
         run: cp "dist/분권API.exe" "dist/NovelSplitterAPI.exe"
 
-      - name: 아티팩트 업로드
-        uses: actions/upload-artifact@v4
-        with:
-          name: 분권API-windows
-          path: dist/분권API.exe
-          if-no-files-found: error
-
+      # Release 는 아티팩트 저장 용량과 무관하므로 먼저 첨부한다.
       - name: Release 첨부
         if: startsWith(github.ref, 'refs/tags/api-v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/NovelSplitterAPI.exe
+
+      # 아티팩트 업로드는 용량 초과 시 실패해도 Release 전달에 영향 없게 한다.
+      - name: 아티팩트 업로드
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: 분권API-windows
+          path: dist/분권API.exe
