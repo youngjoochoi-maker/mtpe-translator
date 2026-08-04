@@ -29,18 +29,25 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: 빌드 (PyInstaller)
+      - name: 빌드 — 데스크톱 앱 (PyInstaller)
         run: pyinstaller mtpe.spec --noconfirm
+
+      - name: 빌드 — 자동화 API 서버 (PyInstaller)
+        run: pyinstaller mtpe_api.spec --noconfirm
 
       - name: 아티팩트 업로드 (.exe 다운로드)
         uses: actions/upload-artifact@v4
         with:
           name: MTPE-windows
-          path: dist/MTPE.exe
+          path: |
+            dist/MTPE.exe
+            dist/MTPEApi.exe
 
-      # 태그(v*) 푸시면 Release 에도 첨부
+      # 태그(v*) 푸시면 Release 에도 첨부(데스크톱 앱 + API 서버)
       - name: Release 첨부
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/MTPE.exe
+          files: |
+            dist/MTPE.exe
+            dist/MTPEApi.exe

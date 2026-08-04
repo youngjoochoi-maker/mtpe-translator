@@ -43,6 +43,8 @@ APP_PASSWORD = os.environ.get("MTPE_APP_PASSWORD", "")
 # MTPE_KEY_MANAGED 설정 시 키 입력 UI 숨김(회사 공용 키를 서버 env 로 운영)
 KEY_MANAGED = bool(os.environ.get("MTPE_KEY_MANAGED"))
 SESSION_SECRET = os.environ.get("MTPE_SECRET") or "mtpe-dev-secret-change-me"
+# MTPE_API_TOKEN 설정 시 자동화 API(/api/automate/*)를 이 토큰(헤더 X-API-Key)으로 보호(n8n 등)
+API_TOKEN = os.environ.get("MTPE_API_TOKEN", "")
 
 app = FastAPI(title="MTPE 번역 파이프라인")
 
@@ -53,7 +55,9 @@ async def _auth_gate(request: Request, call_next):
     if not APP_PASSWORD:
         return await call_next(request)
     path = request.url.path
-    allow = path in ("/login",) or path.startswith("/api/login") or path.startswith("/api/logout")
+    # /api/automate/* 는 세션 로그인 대신 API 토큰(X-API-Key)으로 별도 보호되므로 게이트 통과
+    allow = (path in ("/login",) or path.startswith("/api/login")
+             or path.startswith("/api/logout") or path.startswith("/api/automate"))
     if allow or request.session.get("authed"):
         return await call_next(request)
     if path.startswith("/api/"):
@@ -766,6 +770,114 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
             yield emit({"type": "error", "message": str(exc)})
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+# ── 자동화(n8n 등) API — 요청 1번 → JSON 1번(비스트리밍) ──────────
+def _check_api_token(request: Request) -> JSONResponse | None:
+    """자동화 API 인증. 토큰 설정 시 헤더 X-API-Key 로 검사. 배포(비번)인데 토큰 미설정이면 차단."""
+    if API_TOKEN:
+        supplied = ""
+        if request is not None:
+            supplied = request.headers.get("x-api-key", "") or request.query_params.get("api_key", "")
+        if supplied != API_TOKEN:
+            return JSONResponse({"ok": False, "error": "유효한 API 키가 필요합니다 (헤더 X-API-Key)."},
+                                status_code=401)
+        return None
+    if APP_PASSWORD:  # 배포 서버인데 자동화 토큰 미설정 → 보안상 자동화 비활성
+        return JSONResponse({"ok": False,
+            "error": "자동화 API 가 비활성입니다. 서버에 MTPE_API_TOKEN 을 설정하세요."}, status_code=403)
+    return None  # 로컬(비번·토큰 모두 없음)은 개방
+
+
+@app.get("/api/automate/works")
+def automate_works(request: Request) -> JSONResponse:
+    """자동화용 — 작품/언어/버전/회차 목록(n8n 이 무엇을 번역할지 조회)."""
+    err = _check_api_token(request)
+    if err:
+        return err
+    works = []
+    for b in list_bundles(_prompts_root()):
+        works.append({
+            "work": b["work"],
+            "langs": b.get("langs", []),
+            "episodes": [e.get("name") for e in _list_episodes(b["work"])],
+        })
+    return JSONResponse({"ok": True, "works": works})
+
+
+@app.post("/api/automate/translate")
+def automate_translate(request: Request, payload: dict = Body(...)) -> JSONResponse:
+    """자동화용 — 회차 1개(또는 원문 텍스트)를 번역해 최종 결과를 단일 JSON 으로 반환.
+
+    body:
+      work, lang            (필수)  예: "장저견", "zh-ko"
+      version               (선택)  미지정 시 최신
+      model                 (선택)  기본 "mock". 실제 모델은 서버 env 에 키 필요
+      episode               (원문 소스 ①) 라이브러리 회차 파일명. 주면 그 원문을 읽음
+      source                (원문 소스 ②) 원문 텍스트 직접 전달(episode 없을 때)
+      glossary              (선택)  설정집 텍스트 직접 전달(없으면 작품 TB 사용)
+      save                  (선택, 기본 true) episode 일 때 output/<회차>/final.txt 저장
+      include_steps         (선택, 기본 true) 단계별 결과 포함 여부
+    """
+    err = _check_api_token(request)
+    if err:
+        return err
+    load_env_into_os()
+
+    work = payload.get("work")
+    lang = (payload.get("lang") or "").lower()
+    version = payload.get("version") or None
+    model = payload.get("model") or "mock"
+    episode = payload.get("episode")
+    source = payload.get("source")
+    glossary = payload.get("glossary")
+    if not work or not lang:
+        return JSONResponse({"ok": False, "error": "work, lang 이 필요합니다."}, status_code=400)
+
+    # 원문 확보: episode 우선 → 없으면 source 텍스트
+    if episode:
+        p = _episode_path(work, episode)
+        if not p:
+            return JSONResponse({"ok": False, "error": "회차 원문을 찾을 수 없습니다."}, status_code=400)
+        src_text = read_text(str(p))
+    elif source:
+        src_text = source
+    else:
+        return JSONResponse({"ok": False, "error": "episode 또는 source 중 하나가 필요합니다."},
+                            status_code=400)
+
+    # 설정집: 직접 전달 우선 → 없으면 작품 TB(회차 기반일 때)
+    tb_text = glossary if glossary is not None else (_read_tb_text(work) if episode else "")
+
+    need = required_key_for(model)
+    if need and not os.environ.get(need):
+        return JSONResponse({"ok": False,
+            "error": f"{need} 가 서버에 설정되지 않았습니다(서버 .env 에 저장하세요)."}, status_code=400)
+
+    try:
+        pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
+        llm = _mock_llm if model == "mock" else None
+        steps = []
+        for r in pipe.run_iter(src_text, tb_text, model_override=model, llm=llm):
+            steps.append({"id": r.id, "name": r.name, "chars": len(r.output),
+                          "skipped": r.skipped, "error": r.error, "output": r.output})
+        final = pipe.final_output
+        bver = pipe.bundle.version
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    saved = None
+    if episode and payload.get("save", True):
+        outd = _work_dir(work) / "output" / Path(episode).stem
+        outd.mkdir(parents=True, exist_ok=True)
+        (outd / "final.txt").write_text(final, encoding="utf-8")
+        saved = str(outd / "final.txt")
+
+    result = {"ok": True, "work": work, "lang": lang, "version": bver,
+              "episode": episode, "model": model, "final": final, "saved": saved}
+    if payload.get("include_steps", True):
+        result["steps"] = steps
+    return JSONResponse(result)
 
 
 # ── 프롬프트 튜닝 (단계별 결과 보며 프롬프트 개선) ───────────────
