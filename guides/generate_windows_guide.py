@@ -14,7 +14,9 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 
-RELEASE_URL = "https://github.com/youngjoochoi-maker/mtpe-translator/releases/latest"
+# 저장소에 다른 프로그램(NovelSplitter·api) 릴리스도 있어 /releases/latest 는 MTPE 가 아닐 수 있음.
+# → 전체 릴리스 목록에서 vX.Y.Z (MTPE.exe 첨부) 중 최신을 받는다.
+RELEASE_URL = "https://github.com/youngjoochoi-maker/mtpe-translator/releases"
 
 FONT = "맑은 고딕"
 NAVY = "1F4E5F"; TEAL = "2E7D8A"; LGRAY = "EEF3F5"; SECT = "D7E6EA"
@@ -113,8 +115,9 @@ rr += 1
 d.merge_cells(f"A{rr}:D{rr}"); st(d.cell(rr, 1), bold=True, color="FFFFFF", bg=TEAL, align="left")
 d.cell(rr, 1).value = "  방법 B — GitHub에서 직접 받기 (GitHub 계정 + 저장소 접근 권한 필요)"; rr += 1
 rr = drow(rr, "B-1", "GitHub 로그인", "인터넷 브라우저에서 github.com 에 로그인합니다. (계정이 없으면 방법 A로 받으세요. 이 저장소는 비공개라 권한이 있어야 보입니다.)", "GitHub에 로그인된 상태")
-rr = drow(rr, "B-2", "릴리스 페이지 열기", f"주소창에 아래를 입력해 엽니다:\n{RELEASE_URL}\n(권한이 없으면 'Not Found'가 떠요 → 운영자에게 '저장소에 초대(collaborator)해 주세요' 요청)", "최신 버전(Release) 화면이 보임")
-rr = drow(rr, "B-3", "MTPE.exe 내려받기", "화면 아래쪽 'Assets' 목록에서 MTPE.exe 를 클릭하면 다운로드됩니다.", "다운로드 폴더에 MTPE.exe (약 58MB)")
+rr = drow(rr, "B-2", "릴리스 목록 열기", f"주소창에 아래를 입력해 엽니다:\n{RELEASE_URL}\n(권한이 없으면 'Not Found'가 떠요 → 운영자에게 '저장소에 초대(collaborator)해 주세요' 요청)", "여러 버전(Releases) 목록이 보임")
+rr = drow(rr, "B-3", "MTPE 최신 버전 고르기", "목록에서 이름이 v1.1.1 처럼 v로 시작하는 것 중 가장 위(최신)를 클릭. ※ splitter-… / api-… 로 시작하는 건 다른 프로그램이니 무시하세요.", "MTPE.exe 가 첨부된 버전 화면이 열림")
+rr = drow(rr, "B-4", "MTPE.exe 내려받기", "그 화면 아래 'Assets' 목록에서 MTPE.exe 를 클릭하면 다운로드됩니다.", "다운로드 폴더에 MTPE.exe (약 58MB)")
 
 rr += 1
 d.merge_cells(f"A{rr}:D{rr}")
