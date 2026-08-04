@@ -25,10 +25,10 @@ def main() -> None:
     print("=" * 56)
     print("  소설 분권 API 서버")
     print("=" * 56)
-    print(f"  주소   : http://{host}:{port}")
+    print(f"  웹 UI  : http://localhost:{port}/   (브라우저로 접속해 직접 사용)")
     print(f"  상태확인: http://localhost:{port}/health")
     print(f"  API 토큰: {API_TOKEN}")
-    print("  (n8n HTTP Request 헤더에 X-API-Key 로 이 토큰을 넣으세요)")
+    print("  (웹 UI 첫 접속 시 위 토큰을 한 번 입력 / n8n 은 X-API-Key 헤더에 사용)")
     print("=" * 56)
 
     uvicorn.run("novel_splitter.api:app", host=host, port=port, log_level="info")

@@ -31,13 +31,20 @@ from dataclasses import asdict
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .platform_fetcher import PlatformError, PlatformFetcher
 from .processor import Processor, SplitMode, SplitOptions
 from .utils import is_supported_file
+from .web import INDEX_HTML
 
 app = FastAPI(title="소설 분권 API", version="1.0.0")
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    """웹 UI(사람용 브라우저 페이지)를 제공한다. API 와 같은 서버가 함께 서빙."""
+    return INDEX_HTML
 
 _processor = Processor()
 _MAX_BYTES = 50 * 1024 * 1024  # 업로드 파일 최대 50MB
