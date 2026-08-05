@@ -1,0 +1,64 @@
+{
+  "name": "MTPE 번역 (스타터)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger-1",
+      "name": "수동 실행",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:8000/api/automate/works",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "여기에-사내-토큰-입력" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "http-works",
+      "name": "작품·회차 조회",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/automate/translate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-Key", "value": "여기에-사내-토큰-입력" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"work\": \"장저견\",\n  \"lang\": \"zh-ko\",\n  \"model\": \"gemini/gemini-2.5-pro\",\n  \"episode\": \"데모_1화.txt\"\n}",
+        "options": {}
+      },
+      "id": "http-translate",
+      "name": "MTPE 번역",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [420, 380]
+    }
+  ],
+  "connections": {
+    "수동 실행": {
+      "main": [
+        [
+          { "node": "작품·회차 조회", "type": "main", "index": 0 },
+          { "node": "MTPE 번역", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}

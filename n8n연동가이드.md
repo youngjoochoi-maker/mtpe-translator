@@ -10,6 +10,12 @@ MTPE 번역을 **n8n(또는 다른 자동화 도구)**에서 HTTP로 호출하�
 - 데스크톱 앱(MTPE.app/.exe)은 창 닫으면 종료돼서 자동화 대상이 못 됩니다.
 - → **API 서버**(이 문서)를 상시 실행하고, n8n이 그 주소를 호출합니다.
 
+## 1-A. 추천 구성 (사내 사용)
+**self-hosted n8n + MTPE API 서버를 같은 사내 PC/서버에서 함께 실행** → n8n이 `localhost` 로 호출.
+- 가장 간단(배포·공인도메인 불필요), 전부 사내망 안이라 보안 유리, 비용 0.
+- n8n 클라우드는 MTPE API 를 인터넷에 공개 배포해야 해서(HTTPS·보안·비용) 사내 용도엔 과함.
+- 빠른 시작용 **import 파일**: `n8n_MTPE_워크플로_스타터.json` (아래 4번) — n8n 에 불러와서 URL·토큰만 바꾸면 됨.
+
 ---
 
 ## 2. 서버 실행
@@ -99,6 +105,12 @@ python run_api.py
 6. 실행 → 응답의 `{{$json.final}}` 이 최종 번역문.
 
 **예시 흐름:** (Schedule) → HTTP GET `/api/automate/works` 로 회차 목록 → Split → 각 회차마다 HTTP POST `/api/automate/translate` → 결과를 Google Drive/Sheets/메일 등으로.
+
+### 빠른 시작 — 스타터 워크플로 import
+1. n8n → 우상단 **⋯ → Import from File** → `n8n_MTPE_워크플로_스타터.json` 선택
+2. 두 HTTP 노드의 **URL**(서버 주소)과 헤더 **`X-API-Key`**(토큰)만 실제 값으로 변경
+3. **MTPE 번역** 노드의 Body(work/lang/model/episode)를 원하는 값으로 수정 → 실행
+   (노드: 수동 실행 → 작품·회차 조회 / MTPE 번역)
 
 ---
 
