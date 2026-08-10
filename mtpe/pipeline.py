@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,13 +33,40 @@ class StageResult:
 
 
 def extract_output(text: str, rule: str | None) -> str:
-    """extract 규칙 적용. 'tag:NAME' → <NAME>...</NAME> 안의 내용만 반환."""
+    """extract 규칙 적용.
+
+    'tag:NAME'  → <NAME>...</NAME> 안의 내용만 반환.
+    'json:FIELD'→ <o> 안(없으면 전체)에서 JSON 을 파싱해 FIELD 값만 반환
+                  (프롬프트가 <o>{JSON}</o> 로 답할 때 특정 필드[번역문]만 깔끔히 추출).
+    파싱 실패 시엔 원본을 그대로 반환(모의 모드 등에서도 흐름 유지).
+    """
     if not rule:
         return text
     if rule.startswith("tag:"):
         tag = rule.split(":", 1)[1].strip()
         m = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.S)
         return m.group(1).strip() if m else text.strip()
+    if rule.startswith("json:"):
+        field = rule.split(":", 1)[1].strip()
+        inner = text
+        m = re.search(r"<o>(.*?)</o>", text, re.S)
+        if m:
+            inner = m.group(1)
+        inner = inner.strip()
+        if inner.startswith("```"):  # 코드펜스 제거
+            inner = inner.strip("`")
+            if "{" in inner and "}" in inner:
+                inner = inner[inner.find("{"): inner.rfind("}") + 1]
+        try:
+            data = json.loads(inner)
+            val = data.get(field)
+            if isinstance(val, str):
+                return val.strip()
+            if val is not None:
+                return str(val)
+        except Exception:  # noqa: BLE001
+            pass
+        return (m.group(1).strip() if m else text.strip())  # 실패 시 원본 유지
     return text
 
 
