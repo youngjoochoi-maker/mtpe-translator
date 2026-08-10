@@ -1,0 +1,42 @@
+work: 샘플
+lang: ko-en
+version: V1
+source_lang: auto
+target_lang: 한국어
+notes: ''
+steps:
+- id: 1
+  name: 1단계
+  file: step1.txt
+  inputs:
+  - source
+  - glossary
+- id: 2
+  name: 2단계
+  file: step2.txt
+  inputs:
+  - source
+  - glossary
+  - step1
+- id: 3
+  name: 3단계
+  file: step3.txt
+  inputs:
+  - source
+  - glossary
+  - step2
+- id: 4
+  name: 4단계
+  file: step4.txt
+  inputs:
+  - source
+  - glossary
+  - step3
+- id: 5
+  name: 5단계
+  file: step5.txt
+  inputs:
+  - source
+  - glossary
+  - step4
+  output: final

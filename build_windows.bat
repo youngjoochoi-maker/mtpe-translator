@@ -1,28 +1,56 @@
 @echo off
-REM ── MTPE Windows 빌드 스크립트 ──────────────────────────────
-REM 윈도우 PC 에서 실행: 더블클릭 또는  build_windows.bat
-REM 결과:  dist\MTPE.exe  (단일 실행파일)
-REM 필요: Python 3.11+ 설치 (python --version 으로 확인)
-
+REM MTPE Windows build script. Output: dist\MTPE.exe
+REM (ASCII only - Korean text breaks cmd parsing)
 setlocal
-echo [1/4] 가상환경 생성...
-python -m venv build-venv || goto :err
+cd /d "%~dp0"
+echo ============================================
+echo   MTPE Windows Build
+echo ============================================
+echo.
+
+REM Find Python (python or py launcher)
+set "PY="
+where python >nul 2>&1 && set "PY=python"
+if not defined PY ( where py >nul 2>&1 && set "PY=py" )
+if not defined PY (
+    echo [ERROR] Python not found.
+    echo   Install Python 3.11 - 3.12 from https://www.python.org/downloads/
+    echo   Check "Add python.exe to PATH" during installation.
+    echo.
+    pause
+    exit /b 1
+)
+echo Using Python:
+%PY% --version
+echo.
+
+echo [1/4] Creating virtual environment...
+%PY% -m venv build-venv || goto :err
 call build-venv\Scripts\activate.bat || goto :err
 
-echo [2/4] 의존성 설치...
+echo [2/4] Installing dependencies (takes a few minutes)...
 python -m pip install --upgrade pip
 pip install -r requirements.txt || goto :err
 pip install pyinstaller || goto :err
 
-echo [3/4] 빌드 (PyInstaller)...
+echo [3/4] Building with PyInstaller...
 pyinstaller mtpe.spec --noconfirm || goto :err
 
-echo [4/4] 완료!
-echo   실행파일: %CD%\dist\MTPE.exe
-echo   더블클릭하면 앱이 실행됩니다.
-goto :eof
+echo.
+echo ============================================
+echo   [DONE] dist\MTPE.exe has been created.
+echo   Double-click it to run the app.
+echo ============================================
+echo.
+pause
+exit /b 0
 
 :err
 echo.
-echo [오류] 빌드 실패. 위 메시지를 확인하세요.
+echo ============================================
+echo   [ERROR] Build failed. Check the messages above.
+echo   (Capture this screen if you need help.)
+echo ============================================
+echo.
+pause
 exit /b 1
