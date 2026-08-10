@@ -24,3 +24,7 @@ _serverdata/
 .DS_Store
 *.log
 .claude/settings.local.json
+.github/workflows/build-windows.yml
+
+# 분권 API 토큰(비밀)
+splitter_api_token.txt

@@ -6,6 +6,12 @@
       "runtimeExecutable": "./.venv/bin/python",
       "runtimeArgs": ["-m", "mtpe.server"],
       "port": 8000
+    },
+    {
+      "name": "mtpe-icloud",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd '/Users/p-063/Library/Mobile Documents/com~apple~CloudDocs/young/MTPE' && MTPE_PORT=8001 exec ./.venv/bin/python -m mtpe.server"],
+      "port": 8001
     }
   ]
 }
