@@ -12,7 +12,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "http://localhost:8000/api/automate/works",
+        "url": "http://localhost:8001/api/automate/works",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -30,7 +30,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:8000/api/automate/translate",
+        "url": "http://localhost:8001/api/automate/translate",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

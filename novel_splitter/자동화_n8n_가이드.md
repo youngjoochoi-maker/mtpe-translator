@@ -63,7 +63,7 @@ n8n 클라우드(인터넷)가 사내 PC를 부를 수 있도록 터널을 엽�
 
 ## 3단계 · n8n 연결 테스트 (먼저 이것부터)
 
-1. n8n에서 **Import from File** → 저장소의 `n8n_연결테스트.json` 불러오기
+1. n8n에서 **Import from File** → 저장소의 `n8n/n8n_연결테스트.json` 불러오기
 2. `분권 API 호출` 노드를 열어 두 값을 바꿉니다:
    - `URL`: `https://<2단계 터널주소>/platform/episodes`
    - `X-API-Key` 헤더 값: `<1단계 토큰>`

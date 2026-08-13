@@ -1121,7 +1121,7 @@ def main() -> None:
     import uvicorn
 
     host = os.environ.get("MTPE_HOST", "127.0.0.1")
-    port = int(os.environ.get("MTPE_PORT", "8000"))
+    port = int(os.environ.get("MTPE_PORT", "8001"))
     print(f"▶ MTPE 웹 UI: http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level="warning")
 

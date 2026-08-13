@@ -39,10 +39,10 @@ python run_api.py
 | `MTPE_API_TOKEN` | 자동화 API 보호 토큰. **외부 노출 시 반드시 설정**(헤더 `X-API-Key` 로 검사) |
 | `MTPE_DATA_DIR` | 데이터 폴더(prompts/works/.env). 실제 모델 쓰려면 이 `.env` 에 키가 있어야 함 |
 | `MTPE_HOST` | 기본 `127.0.0.1`. **다른 PC나 n8n 클라우드에서 접속**하려면 `0.0.0.0` |
-| `MTPE_PORT` | 기본 `8000` |
+| `MTPE_PORT` | 기본 `8001` (분권 API `8000` 과 분리) |
 
 > 실제 번역(Gemini 등)을 하려면 서버의 `.env`(=`$MTPE_DATA_DIR/.env`)에 API 키가 있어야 합니다.
-> n8n이 **다른 서버/클라우드**에 있으면, 이 API 서버를 공인 주소로 배포해야 합니다 → `배포가이드.md`.
+> n8n이 **다른 서버/클라우드**에 있으면, 이 API 서버를 공인 주소로 배포해야 합니다 → `../docs/배포가이드.md`.
 
 ---
 
@@ -91,7 +91,7 @@ python run_api.py
 
 1. **HTTP Request** 노드 추가
 2. **Method**: `POST`
-3. **URL**: `http://<서버주소>:8000/api/automate/translate`
+3. **URL**: `http://<서버주소>:8001/api/automate/translate`
 4. **Authentication**: None (헤더로 직접) → **Headers** 에 `X-API-Key = <토큰>` 추가
 5. **Body Content Type**: `JSON` → 아래처럼:
 ```json

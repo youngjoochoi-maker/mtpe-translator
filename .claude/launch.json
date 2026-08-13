@@ -5,7 +5,7 @@
       "name": "mtpe-web",
       "runtimeExecutable": "./.venv/bin/python",
       "runtimeArgs": ["-m", "mtpe.server"],
-      "port": 8000
+      "port": 8001
     },
     {
       "name": "mtpe-icloud",
