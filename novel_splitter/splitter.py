@@ -63,77 +63,130 @@ class Splitter:
         separator: str,
         include_separator: bool = True,
         remove_separator: bool = False,
+        position: str = "start",
     ) -> List[List[Block]]:
         """
-        구분자로 '시작하는' 문단에서 새로운 분권을 시작한다.
+        구분자가 있는 문단을 기준으로 분권한다.
 
         Parameters
         ----------
         blocks : 원본 블록 리스트
         separator : 분권 기준 문자열 (예: 'Chapter', '###', '===')
         include_separator : 구분자 문단을 결과 파일에 포함할지 여부
-        remove_separator : 구분자 '문자열'만 문단 앞에서 제거할지 여부
-            - True : '###제목' -> '제목'
+        remove_separator : 구분자 '문자열'만 제거할지 여부
+            - position='start' : '###제목' -> '제목'
+            - position='end'   : '마지막 문장.###' -> '마지막 문장.'
+        position : 구분자 위치
+            - 'start'(앞) : 구분자로 '시작하는' 줄부터 '새 화'가 시작된다.
+                            (예: 각 화 제목이 '제1화'처럼 맨 앞에 오는 경우)
+            - 'end'(뒤)   : 구분자로 '끝나는' 줄이 '그 화의 마지막'이 된다.
+                            (예: 각 화 끝에 '###' 또는 '(다음화에 계속)' 같은
+                             구분자가 붙는 경우)
 
         Notes
         -----
-        - 표(TableBlock)는 대표 텍스트가 없으므로 절대 분권 경계가 되지 않고,
-          직전 문단이 속한 분권에 그대로 포함된다.
-        - 첫 구분자 이전 내용이 있으면 그 부분도 하나의 분권(머리말)이 된다.
+        - 표(TableBlock)는 대표 텍스트가 없으므로 절대 분권 경계가 되지 않는다.
+        - start: 첫 구분자 이전 내용이 있으면 그 부분도 하나의 분권(머리말)이 된다.
+        - end  : 마지막 구분자 이후 내용이 있으면 그 부분도 하나의 분권이 된다.
         """
         if not separator:
             raise ValueError("구분자를 입력하세요.")
 
+        if position == "end":
+            return self._split_sep_end(
+                blocks, separator, include_separator, remove_separator
+            )
+        return self._split_sep_start(
+            blocks, separator, include_separator, remove_separator
+        )
+
+    # -- 구분자가 화의 '앞(시작)'에 오는 경우 ----------------------------- #
+    def _split_sep_start(
+        self, blocks, separator, include_separator, remove_separator
+    ) -> List[List[Block]]:
         chunks: List[List[Block]] = []
         current: List[Block] = []
 
         for block in blocks:
-            # 문단이면서 구분자로 시작하는 경우에만 경계로 판정한다.
+            # 문단이면서 구분자로 '시작'하면 새 화의 경계
             is_boundary = (
                 isinstance(block, ParagraphBlock)
                 and block.text.lstrip().startswith(separator)
             )
-
             if is_boundary:
-                # 지금까지 모은 내용이 있으면 하나의 분권으로 확정
                 if current:
                     chunks.append(current)
                 current = []
-
-                # 구분자 문단 자체의 처리
                 if include_separator:
                     if remove_separator:
                         current.append(
                             ParagraphBlock(
-                                text=self._strip_separator(block.text, separator)
+                                text=self._strip_separator_start(block.text, separator)
                             )
                         )
                     else:
                         current.append(block)
-                # include_separator=False 이면 구분자 문단은 버린다.
+                # include_separator=False 이면 구분자 줄은 버린다.
             else:
                 current.append(block)
 
-        # 마지막 분권 추가
         if current:
             chunks.append(current)
-
-        # 아무 구분자도 찾지 못한 경우 전체를 한 개의 분권으로 반환
         if not chunks:
             chunks = [list(blocks)]
+        return chunks
 
+    # -- 구분자가 화의 '뒤(끝)'에 붙는 경우 ------------------------------- #
+    def _split_sep_end(
+        self, blocks, separator, include_separator, remove_separator
+    ) -> List[List[Block]]:
+        chunks: List[List[Block]] = []
+        current: List[Block] = []
+
+        for block in blocks:
+            # 문단이면서 구분자로 '끝'나면 그 줄이 현재 화의 마지막
+            is_boundary = (
+                isinstance(block, ParagraphBlock)
+                and block.text.rstrip().endswith(separator)
+            )
+            if is_boundary:
+                if include_separator:
+                    if remove_separator:
+                        stripped = self._strip_separator_end(block.text, separator)
+                        # 구분자만 있던 줄이면(제거 후 빈 줄) 굳이 넣지 않는다
+                        if stripped.strip():
+                            current.append(ParagraphBlock(text=stripped))
+                    else:
+                        current.append(block)
+                # include_separator=False 이면 구분자 줄은 버린다.
+                # 이 줄로 현재 화가 끝났으므로 확정
+                if current:
+                    chunks.append(current)
+                    current = []
+            else:
+                current.append(block)
+
+        # 마지막 구분자 이후 남은 내용도 하나의 분권으로
+        if current:
+            chunks.append(current)
+        if not chunks:
+            chunks = [list(blocks)]
         return chunks
 
     @staticmethod
-    def _strip_separator(line: str, separator: str) -> str:
-        """
-        문단 앞쪽의 공백과 구분자 문자열을 제거하고 나머지를 반환한다.
-        예) '  ###제목' , sep='###' -> '제목'
-        """
+    def _strip_separator_start(line: str, separator: str) -> str:
+        """줄 앞쪽의 공백과 구분자를 제거하고 나머지를 반환한다. '  ###제목' -> '제목'"""
         stripped = line.lstrip()
         if stripped.startswith(separator):
-            remainder = stripped[len(separator):]
-            return remainder.lstrip()
+            return stripped[len(separator):].lstrip()
+        return line
+
+    @staticmethod
+    def _strip_separator_end(line: str, separator: str) -> str:
+        """줄 뒤쪽의 구분자와 공백을 제거하고 나머지를 반환한다. '문장.### ' -> '문장.'"""
+        stripped = line.rstrip()
+        if stripped.endswith(separator):
+            return stripped[: len(stripped) - len(separator)].rstrip()
         return line
 
     # ------------------------------------------------------------------ #

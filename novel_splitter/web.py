@@ -85,9 +85,13 @@ INDEX_HTML = r"""<!doctype html>
     </div>
     <div class="grp on" id="g_sep">
       <div class="row"><label>구분자</label><input type="text" id="sep" placeholder="예) ###, Chapter, ==="></div>
+      <div class="row"><label>구분자 위치</label>
+        <label><input type="radio" name="seppos" value="start" checked> 앞 (구분자로 시작하는 줄부터 새 화)</label>
+        <label><input type="radio" name="seppos" value="end"> 뒤 (구분자로 끝나는 줄이 화의 마지막)</label>
+      </div>
       <div class="row">
         <label><input type="checkbox" id="inc" checked> 구분자를 결과에 포함</label>
-        <label><input type="checkbox" id="rem"> 구분자 문자열 제거 (###제목 → 제목)</label>
+        <label><input type="checkbox" id="rem"> 구분자 문자열 제거 (###제목→제목, 문장.###→문장.)</label>
       </div>
     </div>
     <div class="grp" id="g_cnt">
@@ -161,6 +165,7 @@ async function doSplit(){ if(!curFile){alert('먼저 파일을 선택하세요')
   const m=document.querySelector('input[name=mode]:checked').value;
   const fd=new FormData(); fd.append('file',curFile); fd.append('mode',m);
   fd.append('separator',document.getElementById('sep').value);
+  fd.append('separator_position',document.querySelector('input[name=seppos]:checked').value);
   fd.append('include_separator',document.getElementById('inc').checked);
   fd.append('remove_separator',document.getElementById('rem').checked);
   fd.append('count_limit',document.getElementById('limit').value);

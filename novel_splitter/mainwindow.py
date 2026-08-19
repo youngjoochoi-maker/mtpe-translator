@@ -256,14 +256,28 @@ class MainWindow(QWidget):
         sep_row = QHBoxLayout()
         sep_row.addWidget(QLabel("구분자:"))
         self.sep_input = QLineEdit()
-        self.sep_input.setPlaceholderText("예) Chapter, ###, ===  (해당 문자열로 시작하는 줄에서 분권)")
+        self.sep_input.setPlaceholderText("예) Chapter, ###, ===")
         sep_row.addWidget(self.sep_input, stretch=1)
         layout.addLayout(sep_row)
+
+        # 구분자 위치: 앞(구분자로 시작하는 줄에서 새 화) / 뒤(구분자로 끝나는 줄이 화의 끝)
+        pos_row = QHBoxLayout()
+        pos_row.addWidget(QLabel("구분자 위치:"))
+        self.sep_pos_group = QButtonGroup(self)
+        self.rb_sep_start = QRadioButton("앞 (구분자로 시작하는 줄부터 새 화)")
+        self.rb_sep_end = QRadioButton("뒤 (구분자로 끝나는 줄이 화의 마지막)")
+        self.rb_sep_start.setChecked(True)
+        self.sep_pos_group.addButton(self.rb_sep_start)
+        self.sep_pos_group.addButton(self.rb_sep_end)
+        pos_row.addWidget(self.rb_sep_start)
+        pos_row.addWidget(self.rb_sep_end)
+        pos_row.addStretch(1)
+        layout.addLayout(pos_row)
 
         sep_opts = QHBoxLayout()
         self.chk_include_sep = QCheckBox("구분자를 결과 파일에 포함")
         self.chk_include_sep.setChecked(True)
-        self.chk_remove_sep = QCheckBox("구분자 문자열 제거 (예: '###제목' → '제목')")
+        self.chk_remove_sep = QCheckBox("구분자 문자열 제거 (###제목→제목, 문장.###→문장.)")
         sep_opts.addWidget(self.chk_include_sep)
         sep_opts.addWidget(self.chk_remove_sep)
         sep_opts.addStretch(1)
@@ -514,6 +528,8 @@ class MainWindow(QWidget):
         self.sep_input.setEnabled(sep_mode)
         self.chk_include_sep.setEnabled(sep_mode)
         self.chk_remove_sep.setEnabled(sep_mode)
+        self.rb_sep_start.setEnabled(sep_mode)
+        self.rb_sep_end.setEnabled(sep_mode)
 
         # 글자수/단어수 입력
         self.count_input.setEnabled(char_mode or word_mode)
@@ -540,6 +556,7 @@ class MainWindow(QWidget):
             separator=self.sep_input.text(),
             include_separator=self.chk_include_sep.isChecked(),
             remove_separator=self.chk_remove_sep.isChecked(),
+            separator_position=("end" if self.rb_sep_end.isChecked() else "start"),
             count_limit=self.count_input.value(),
             char_count_with_spaces=not self.chk_char_no_space.isChecked(),
             custom_output_dir=(

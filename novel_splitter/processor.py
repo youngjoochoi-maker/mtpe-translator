@@ -37,6 +37,7 @@ class SplitOptions:
     separator: str = ""
     include_separator: bool = True
     remove_separator: bool = False
+    separator_position: str = "start"  # 'start'(앞: 구분자로 시작) / 'end'(뒤: 구분자로 끝)
 
     # 글자수 / 단어수 기준
     count_limit: int = 5000
@@ -104,6 +105,7 @@ class Processor:
                 separator=options.separator,
                 include_separator=options.include_separator,
                 remove_separator=options.remove_separator,
+                position=options.separator_position,
             )
         elif options.mode == SplitMode.CHAR_COUNT:
             return self.splitter.split_by_char_count(

@@ -90,6 +90,7 @@ def _build_options(
     number_position: str,
     overwrite: bool,
     output_dir: str,
+    separator_position: str = "start",
 ) -> SplitOptions:
     """폼 값으로 SplitOptions 를 구성한다."""
     mode_map = {
@@ -107,6 +108,7 @@ def _build_options(
         separator=separator,
         include_separator=include_separator,
         remove_separator=remove_separator,
+        separator_position=("end" if separator_position == "end" else "start"),
         count_limit=count_limit,
         char_count_with_spaces=char_count_with_spaces,
         number_position=number_position,
@@ -170,6 +172,7 @@ async def split(
     separator: str = Form(""),
     include_separator: bool = Form(True),
     remove_separator: bool = Form(False),
+    separator_position: str = Form("start"),
     count_limit: int = Form(5000),
     char_count_with_spaces: bool = Form(True),
     number_position: str = Form("suffix"),
@@ -198,7 +201,7 @@ async def split(
         options = _build_options(
             mode, separator, include_separator, remove_separator,
             count_limit, char_count_with_spaces, number_position,
-            overwrite, out_base,
+            overwrite, out_base, separator_position,
         )
         try:
             result = _processor.process_file(path, options)
