@@ -125,6 +125,89 @@ class ExcelExporter:
         wb.save(path)
 
     # ------------------------------------------------------------------ #
+    # 파일별 분량 내보내기 (분권된 파일 분량 파악용)
+    # ------------------------------------------------------------------ #
+    def export_file_analysis(self, items, path: str) -> None:
+        """
+        파일별 분량을 Excel 로 저장한다.
+
+        items : (파일명, Counts) 튜플의 리스트
+        맨 아래에 총합/평균/최대/최소 요약 행을 넣는다.
+        """
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+            from openpyxl.utils import get_column_letter
+        except ImportError as exc:  # pragma: no cover
+            raise ImportError("Excel 내보내기에는 openpyxl 이 필요합니다.") from exc
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "파일 분량"
+
+        header_font = Font(bold=True)
+        header_fill = PatternFill("solid", fgColor="D9E1F2")
+        sum_font = Font(bold=True)
+        sum_fill = PatternFill("solid", fgColor="FCE4D6")
+        right = Alignment(horizontal="right")
+        center = Alignment(horizontal="center")
+
+        headers = ["번호", "파일명", "공백포함 글자수", "공백제외 글자수", "단어수", "줄수"]
+        for col, title in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col, value=title)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = center
+
+        row_idx = 2
+        chars_with = []
+        chars_without = []
+        words = []
+        lines = []
+        for i, (name, counts) in enumerate(items, start=1):
+            values = [
+                i, name,
+                counts.chars_with_spaces, counts.chars_without_spaces,
+                counts.words, counts.lines,
+            ]
+            for col, value in enumerate(values, start=1):
+                cell = ws.cell(row=row_idx, column=col, value=value)
+                if col >= 3:
+                    cell.number_format = "#,##0"
+                    cell.alignment = right
+            chars_with.append(counts.chars_with_spaces)
+            chars_without.append(counts.chars_without_spaces)
+            words.append(counts.words)
+            lines.append(counts.lines)
+            row_idx += 1
+
+        # 요약 행: 총합 / 평균 / 최대 / 최소
+        n = max(len(items), 1)
+
+        def summary_row(label, fn):
+            nonlocal row_idx
+            vals = [label, "",
+                    fn(chars_with), fn(chars_without), fn(words), fn(lines)]
+            for col, value in enumerate(vals, start=1):
+                cell = ws.cell(row=row_idx, column=col, value=value)
+                cell.font = sum_font
+                cell.fill = sum_fill
+                if col >= 3:
+                    cell.number_format = "#,##0"
+                    cell.alignment = right
+            row_idx += 1
+
+        if items:
+            summary_row("총합", lambda a: sum(a))
+            summary_row("평균", lambda a: sum(a) // n)
+            summary_row("최대", lambda a: max(a))
+            summary_row("최소", lambda a: min(a))
+
+        self._autofit_columns(ws, get_column_letter, ncols=len(headers), last_row=row_idx)
+        ws.freeze_panes = "A2"
+        wb.save(path)
+
+    # ------------------------------------------------------------------ #
     # 플랫폼 회차 목록 내보내기 (분권 전 확인용)
     # ------------------------------------------------------------------ #
     def export_platform(self, result: "PlatformResult", path: str) -> None:

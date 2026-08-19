@@ -151,6 +151,7 @@ class MainWindow(QWidget):
         self.setAcceptDrops(True)  # 드래그앤드롭 허용
 
         self._files: List[str] = []            # 선택된 파일 목록
+        self._file_counts: dict = {}           # 파일 경로 -> Counts (분량 파악용)
         self._processor = Processor()          # 미리보기(전체 분량)용
         self._counter = Counter()
         self._thread: QThread | None = None
@@ -200,34 +201,48 @@ class MainWindow(QWidget):
 
         root.addWidget(splitter)
 
-    # --- 1) 파일 선택 영역 ------------------------------------------------ #
+    # --- 1) 파일 선택 / 분량 파악 영역 ----------------------------------- #
     def _build_file_section(self) -> QGroupBox:
-        box = QGroupBox("① 파일 선택")
+        box = QGroupBox("① 파일 선택 · 분량 확인")
         layout = QVBoxLayout(box)
 
         top = QHBoxLayout()
         self.btn_select = QPushButton("파일 선택")
         self.btn_select.clicked.connect(self._on_select_files)
+        self.btn_select_folder = QPushButton("폴더 열기")
+        self.btn_select_folder.clicked.connect(self._on_select_folder)
         self.btn_clear = QPushButton("목록 비우기")
         self.btn_clear.clicked.connect(self._on_clear_files)
-        hint = QLabel("또는 이곳으로 파일을 드래그앤드롭 하세요 (docx, txt)")
+        hint = QLabel("또는 드래그앤드롭 · 분권된 파일 폴더를 열면 회차별 분량을 볼 수 있어요 (docx, txt)")
         hint.setStyleSheet("color: gray;")
         top.addWidget(self.btn_select)
+        top.addWidget(self.btn_select_folder)
         top.addWidget(self.btn_clear)
         top.addWidget(hint, stretch=1)
         layout.addLayout(top)
 
-        # 선택된 파일별 전체 분량 표
-        self.file_table = QTableWidget(0, 4)
+        # 선택된 파일별 분량 표 (공백포함/공백제외/단어수/줄수)
+        self.file_table = QTableWidget(0, 5)
         self.file_table.setHorizontalHeaderLabels(
-            ["파일명", "전체 글자수", "전체 단어수", "전체 줄수"]
+            ["파일명", "공백포함 글자수", "공백제외 글자수", "단어수", "줄수"]
         )
         self.file_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.file_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.Stretch
         )
-        self.file_table.setMaximumHeight(150)
+        self.file_table.setMinimumHeight(150)
         layout.addWidget(self.file_table)
+
+        # 요약(총합·평균·최대·최소) + Excel 저장
+        bottom = QHBoxLayout()
+        self.file_summary = QLabel("분량 요약: -")
+        self.file_summary.setStyleSheet("font-weight: bold;")
+        bottom.addWidget(self.file_summary, stretch=1)
+        self.btn_export_files = QPushButton("분량 Excel 저장")
+        self.btn_export_files.clicked.connect(self._on_export_file_analysis)
+        self.btn_export_files.setEnabled(False)
+        bottom.addWidget(self.btn_export_files)
+        layout.addLayout(bottom)
 
         return box
 
@@ -470,9 +485,28 @@ class MainWindow(QWidget):
         if paths:
             self._add_files(paths)
 
+    def _on_select_folder(self) -> None:
+        """폴더를 열어 그 안의 docx/txt 파일을 모두 불러온다(분권된 파일 분량 확인용)."""
+        directory = QFileDialog.getExistingDirectory(self, "폴더 열기 (docx/txt 분량 확인)")
+        if not directory:
+            return
+        names = sorted(os.listdir(directory))
+        paths = [
+            os.path.join(directory, n)
+            for n in names
+            if is_supported_file(n) and os.path.isfile(os.path.join(directory, n))
+        ]
+        if not paths:
+            QMessageBox.information(self, "안내", "폴더에 docx/txt 파일이 없습니다.")
+            return
+        self._add_files(paths)
+
     def _on_clear_files(self) -> None:
         self._files.clear()
+        self._file_counts.clear()
         self.file_table.setRowCount(0)
+        self.file_summary.setText("분량 요약: -")
+        self.btn_export_files.setEnabled(False)
 
     def _add_files(self, paths: List[str]) -> None:
         """파일 목록에 추가하고 전체 분량을 계산해 표에 표시한다."""
@@ -490,9 +524,10 @@ class MainWindow(QWidget):
             added += 1
         if added:
             self._log(f"{added}개 파일 추가됨 (총 {len(self._files)}개)")
+            self._update_file_summary()
 
     def _append_file_row(self, path: str) -> None:
-        """파일의 전체 분량을 계산하여 파일 표에 한 줄 추가한다."""
+        """파일의 분량을 계산하여 파일 표에 한 줄 추가한다."""
         try:
             document = self._processor.analyze(path)
             counts: Counts = self._counter.count_blocks(document.blocks)
@@ -501,12 +536,57 @@ class MainWindow(QWidget):
             self._files.remove(path)
             return
 
+        self._file_counts[path] = counts
         row = self.file_table.rowCount()
         self.file_table.insertRow(row)
         self.file_table.setItem(row, 0, QTableWidgetItem(os.path.basename(path)))
         self.file_table.setItem(row, 1, self._num_item(counts.chars_with_spaces))
-        self.file_table.setItem(row, 2, self._num_item(counts.words))
-        self.file_table.setItem(row, 3, self._num_item(counts.lines))
+        self.file_table.setItem(row, 2, self._num_item(counts.chars_without_spaces))
+        self.file_table.setItem(row, 3, self._num_item(counts.words))
+        self.file_table.setItem(row, 4, self._num_item(counts.lines))
+
+    def _update_file_summary(self) -> None:
+        """불러온 파일들의 분량 요약(총합·평균·최대·최소)을 갱신한다."""
+        counts_list = [self._file_counts[p] for p in self._files if p in self._file_counts]
+        n = len(counts_list)
+        self.btn_export_files.setEnabled(n > 0)
+        if n == 0:
+            self.file_summary.setText("분량 요약: -")
+            return
+        chars = [c.chars_with_spaces for c in counts_list]
+        total = sum(chars)
+        avg = total // n
+        self.file_summary.setText(
+            f"분량 요약 — {n}개 파일 | 공백포함 합계 {total:,}자 · "
+            f"평균 {avg:,}자 · 최대 {max(chars):,}자 · 최소 {min(chars):,}자"
+        )
+
+    def _on_export_file_analysis(self) -> None:
+        """불러온 파일들의 분량을 Excel(.xlsx)로 저장한다."""
+        items = [
+            (os.path.basename(p), self._file_counts[p])
+            for p in self._files
+            if p in self._file_counts
+        ]
+        if not items:
+            QMessageBox.warning(self, "확인", "먼저 파일을 불러오세요.")
+            return
+        default_dir = os.path.dirname(os.path.abspath(self._files[0]))
+        default_path = os.path.join(default_dir, "파일분량.xlsx")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "분량 Excel로 저장", default_path, "Excel 파일 (*.xlsx)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+        try:
+            ExcelExporter().export_file_analysis(items, path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "내보내기 오류", f"저장 중 오류가 발생했습니다.\n{exc}")
+            return
+        self._log(f"파일 분량 저장 완료: {path}")
+        QMessageBox.information(self, "완료", f"분량을 저장했습니다.\n{path}")
 
     def _on_custom_dir_toggled(self, checked: bool) -> None:
         self.btn_pick_dir.setEnabled(checked)
@@ -617,6 +697,7 @@ class MainWindow(QWidget):
         """실행 중에는 조작 버튼을 비활성화한다."""
         self.btn_run.setEnabled(not running)
         self.btn_select.setEnabled(not running)
+        self.btn_select_folder.setEnabled(not running)
         self.btn_clear.setEnabled(not running)
         if running:
             self.status_label.setText("처리 시작...")
