@@ -87,7 +87,7 @@ INDEX_HTML = r"""<!doctype html>
       <div class="row"><label>구분자</label><input type="text" id="sep" placeholder="예) ###, Chapter, ==="></div>
       <div class="row"><label>구분자 위치</label>
         <label><input type="radio" name="seppos" value="start" checked> 앞 (구분자로 시작하는 줄부터 새 화)</label>
-        <label><input type="radio" name="seppos" value="end"> 뒤 (구분자로 끝나는 줄이 화의 마지막)</label>
+        <label><input type="radio" name="seppos" value="end"> 뒤 (구분자가 들어있는 줄이 화의 마지막)</label>
       </div>
       <div class="row">
         <label><input type="checkbox" id="inc" checked> 구분자를 결과에 포함</label>

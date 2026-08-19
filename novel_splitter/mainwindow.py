@@ -265,7 +265,7 @@ class MainWindow(QWidget):
         pos_row.addWidget(QLabel("구분자 위치:"))
         self.sep_pos_group = QButtonGroup(self)
         self.rb_sep_start = QRadioButton("앞 (구분자로 시작하는 줄부터 새 화)")
-        self.rb_sep_end = QRadioButton("뒤 (구분자로 끝나는 줄이 화의 마지막)")
+        self.rb_sep_end = QRadioButton("뒤 (구분자가 들어있는 줄이 화의 마지막)")
         self.rb_sep_start.setChecked(True)
         self.sep_pos_group.addButton(self.rb_sep_start)
         self.sep_pos_group.addButton(self.rb_sep_end)

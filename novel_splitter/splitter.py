@@ -143,34 +143,35 @@ class Splitter:
             chunks = [list(blocks)]
         return chunks
 
-    # -- 구분자가 화의 '뒤(끝)'에 붙는 경우 ------------------------------- #
+    # -- 구분자가 화의 '뒤(끝)'에 있는 경우 ------------------------------- #
     def _split_sep_end(
         self, blocks, separator, include_separator, remove_separator
     ) -> List[List[Block]]:
-        # 구분자 뒤에 '회차 번호(숫자)'가 붙는 경우까지 화의 끝으로 인식한다.
-        #   예) '문장.@1', '@2', '문장###', '문장###5' 모두 경계.
-        # 반면 'a@b.com' 처럼 뒤에 문자가 오면(줄 끝이 아니면) 매칭되지 않는다.
-        end_re = re.compile(re.escape(separator) + r"\d*\s*$")
-
+        # 구분자가 '들어있는' 줄이면 그 줄을 통째로 화의 마지막(경계)으로 본다.
+        # 구분자 뒤에 숫자든 글자든 무엇이 와도 인식한다.
+        #   예) '문장.@1', '@2', '@1화', '문장.@1화 부제', '문장###' 모두 경계.
+        # 참고: 이메일처럼 본문 중간에 구분자(@)가 들어간 줄도 경계가 되므로,
+        #       구분자는 본문에 안 나오는 고유 문자열을 쓰는 것이 좋다.
         chunks: List[List[Block]] = []
         current: List[Block] = []
 
         for block in blocks:
-            # 문단이면서 '구분자(+숫자)'로 끝나면 그 줄이 현재 화의 마지막
+            # 문단이 구분자를 '포함'하면 그 줄이 현재 화의 마지막
             is_boundary = (
                 isinstance(block, ParagraphBlock)
-                and end_re.search(block.text) is not None
+                and separator in block.text
             )
             if is_boundary:
                 if include_separator:
                     if remove_separator:
-                        # 줄 끝의 구분자(+숫자)만 제거
-                        stripped = end_re.sub("", block.text).rstrip()
+                        # 마지막 구분자부터 줄 끝(마커)까지 제거, 앞쪽 본문은 유지
+                        idx = block.text.rfind(separator)
+                        stripped = block.text[:idx].rstrip()
                         if stripped.strip():
                             current.append(ParagraphBlock(text=stripped))
                     else:
                         current.append(block)
-                # include_separator=False 이면 구분자 줄은 버린다.
+                # include_separator=False 이면 구분자 줄은 통째로 버린다.
                 # 이 줄로 현재 화가 끝났으므로 확정
                 if current:
                     chunks.append(current)
