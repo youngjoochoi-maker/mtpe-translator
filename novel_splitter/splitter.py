@@ -93,12 +93,19 @@ class Splitter:
             raise ValueError("구분자를 입력하세요.")
 
         if position == "end":
-            return self._split_sep_end(
+            chunks = self._split_sep_end(
                 blocks, separator, include_separator, remove_separator
             )
-        return self._split_sep_start(
-            blocks, separator, include_separator, remove_separator
-        )
+        else:
+            chunks = self._split_sep_start(
+                blocks, separator, include_separator, remove_separator
+            )
+
+        # 내용이 없는 빈 분권(빈 파일이 되는 경우)은 제거한다.
+        chunks = [c for c in chunks if any(b.count_text().strip() for b in c)]
+        if not chunks:
+            chunks = [list(blocks)]
+        return chunks
 
     # -- 구분자가 화의 '앞(시작)'에 오는 경우 ----------------------------- #
     def _split_sep_start(
@@ -140,20 +147,25 @@ class Splitter:
     def _split_sep_end(
         self, blocks, separator, include_separator, remove_separator
     ) -> List[List[Block]]:
+        # 구분자 뒤에 '회차 번호(숫자)'가 붙는 경우까지 화의 끝으로 인식한다.
+        #   예) '문장.@1', '@2', '문장###', '문장###5' 모두 경계.
+        # 반면 'a@b.com' 처럼 뒤에 문자가 오면(줄 끝이 아니면) 매칭되지 않는다.
+        end_re = re.compile(re.escape(separator) + r"\d*\s*$")
+
         chunks: List[List[Block]] = []
         current: List[Block] = []
 
         for block in blocks:
-            # 문단이면서 구분자로 '끝'나면 그 줄이 현재 화의 마지막
+            # 문단이면서 '구분자(+숫자)'로 끝나면 그 줄이 현재 화의 마지막
             is_boundary = (
                 isinstance(block, ParagraphBlock)
-                and block.text.rstrip().endswith(separator)
+                and end_re.search(block.text) is not None
             )
             if is_boundary:
                 if include_separator:
                     if remove_separator:
-                        stripped = self._strip_separator_end(block.text, separator)
-                        # 구분자만 있던 줄이면(제거 후 빈 줄) 굳이 넣지 않는다
+                        # 줄 끝의 구분자(+숫자)만 제거
+                        stripped = end_re.sub("", block.text).rstrip()
                         if stripped.strip():
                             current.append(ParagraphBlock(text=stripped))
                     else:
