@@ -329,11 +329,14 @@ def get_bundle(work: str, lang: str, version: str) -> JSONResponse:
             "final": s.get("output") == "final",
             "content": f.read_text(encoding="utf-8") if f.exists() else "",
         })
+    hs_path = path / "house_style.md"
+    house_style = hs_path.read_text(encoding="utf-8") if hs_path.exists() else ""
     return JSONResponse({
         "work": meta.get("work", work), "lang": meta.get("lang", lang),
         "version": version, "source_lang": meta.get("source_lang", "auto"),
         "target_lang": meta.get("target_lang", "한국어"),
-        "notes": meta.get("notes", ""), "steps": steps,
+        "notes": meta.get("notes", ""),
+        "house_style": house_style, "steps": steps,
     })
 
 
@@ -405,6 +408,17 @@ def save_bundle(payload: dict = Body(...)) -> JSONResponse:
     (path / "meta.yaml").write_text(
         yaml.safe_dump(meta, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
+
+    # 작품별 공통 규칙(HOUSE STYLE). payload 에 house_style 키가 있을 때만 반영.
+    #   내용 있음 → house_style.md 저장 / 비어 있음 → 파일 삭제(=공통 규칙 끔)
+    if "house_style" in payload:
+        hs = (payload.get("house_style") or "").strip()
+        hs_path = path / "house_style.md"
+        if hs:
+            hs_path.write_text(hs, encoding="utf-8")
+        elif hs_path.exists():
+            hs_path.unlink()
+
     return JSONResponse({"ok": True, "work": work, "lang": lang, "version": version,
                          "path": str(path)})
 

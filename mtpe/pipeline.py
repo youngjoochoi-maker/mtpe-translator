@@ -70,19 +70,35 @@ def extract_output(text: str, rule: str | None) -> str:
     return text
 
 
-def build_prompt(instruction: str, step: Step, artifacts: dict, labels: dict) -> str:
+_HS_HEADER = "[공통 규칙(HOUSE STYLE) — 아래 규칙을 반드시 준수]"
+
+
+def build_prompt(
+    instruction: str,
+    step: Step,
+    artifacts: dict,
+    labels: dict,
+    inject_house_style: bool = False,
+) -> str:
     """단계 프롬프트를 완성한다.
 
     - 프롬프트에 {{KEY}} 토큰이 있으면 치환 모드 (artifacts 키를 대문자로 매칭).
-    - 없으면 자동 첨부 모드: step.inputs 순서대로 '[입력 자료]' 블록을 덧붙인다.
+      · {{HOUSE_STYLE}} 토큰이 있으면 그 자리에 공통 규칙이 치환된다.
+    - 없으면 자동 첨부 모드: (공통 규칙 →) step.inputs 순서대로 블록을 덧붙인다.
+    - inject_house_style=True 이고 공통 규칙이 있으면 지시문 바로 뒤에 규칙 블록을 넣는다.
     """
+    house_style = (artifacts.get("house_style") or "") if inject_house_style else ""
+
     if "{{" in instruction:
         out = instruction
         for key, val in artifacts.items():
             out = out.replace("{{" + key.upper() + "}}", str(val))
         return out
 
-    parts = [instruction.rstrip(), "", _SEP, "[입력 자료]", ""]
+    parts = [instruction.rstrip(), ""]
+    if house_style.strip():
+        parts += [_SEP, _HS_HEADER, "", str(house_style), ""]
+    parts += [_SEP, "[입력 자료]", ""]
     for key in step.inputs:
         val = artifacts.get(key)
         if val is None or val == "":
@@ -155,6 +171,8 @@ class Pipeline:
             "glossary": glossary or "(설정집 없음)",
             "source_lang": self.bundle.source_lang,
             "target_lang": self.bundle.target_lang,
+            # 작품별 공통 규칙(없으면 빈 문자열 → 주입되지 않음)
+            "house_style": self.bundle.house_style,
         }
         if seed_artifacts:
             artifacts.update({k: v for k, v in seed_artifacts.items() if v is not None})
@@ -185,7 +203,10 @@ class Pipeline:
                 )
                 continue
 
-            user_prompt = build_prompt(instruction, step, artifacts, self.input_labels)
+            user_prompt = build_prompt(
+                instruction, step, artifacts, self.input_labels,
+                inject_house_style=self.bundle.house_style_applies(step),
+            )
             # 모델이 빈 응답(토큰한도/안전필터)을 주면 회차를 죽이지 않고 직전 결과로 대체 + 경고 표시.
             try:
                 raw = llm_fn(

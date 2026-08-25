@@ -35,9 +35,49 @@ class Bundle:
     source_lang: str
     target_lang: str
     steps: list[Step]
+    # 작품별 공통 규칙(HOUSE STYLE / 검수·서식 가이드). 파일이 없으면 빈 문자열 → 기존과 동일 동작.
+    house_style: str = ""
+    # 공통 규칙을 어느 단계에 주입할지: "all"(기본) | "none" | [단계id...]
+    house_style_inject: object = "all"
 
     def step_text(self, step: Step) -> str:
         return (self.path / step.file).read_text(encoding="utf-8")
+
+    def house_style_applies(self, step: "Step") -> bool:
+        """이 단계에 공통 규칙을 주입할지 여부."""
+        if not (self.house_style or "").strip():
+            return False
+        rule = self.house_style_inject
+        if rule in (None, "all"):
+            return True
+        if rule == "none":
+            return False
+        if isinstance(rule, (list, tuple, set)):
+            return step.id in rule
+        return True
+
+
+def load_house_style(prompts_root: str | Path, lang: str, vpath: Path, meta: dict) -> str:
+    """작품 번들의 공통 규칙 파일을 읽는다.
+
+    우선순위: 번들 폴더 → prompts/_defaults/<언어> → prompts/_defaults.
+    meta 의 house_style 값: 미지정→'house_style.md' / 파일명(str)→그 파일 / false→비활성.
+    파일이 하나도 없으면 빈 문자열(=기존과 동일 동작).
+    """
+    cfg = meta.get("house_style", "house_style.md")
+    if cfg is False:
+        return ""
+    filename = cfg if isinstance(cfg, str) and cfg.strip() else "house_style.md"
+    root = Path(prompts_root)
+    candidates = [
+        vpath / filename,
+        root / "_defaults" / lang / "house_style.md",
+        root / "_defaults" / "house_style.md",
+    ]
+    for cp in candidates:
+        if cp.is_file():
+            return cp.read_text(encoding="utf-8").strip()
+    return ""
 
 
 def _version_key(name: str) -> tuple[int, str]:
@@ -116,6 +156,9 @@ def load_bundle(
     if not any(st.is_final for st in steps):
         steps[-1].is_final = True
 
+    house_style = load_house_style(prompts_root, lang, vpath, meta)
+    inject = meta.get("house_style_inject", "all")
+
     return Bundle(
         work=meta.get("work", work),
         lang=meta.get("lang", lang),
@@ -124,4 +167,6 @@ def load_bundle(
         source_lang=meta.get("source_lang", "auto"),
         target_lang=meta.get("target_lang", "한국어"),
         steps=steps,
+        house_style=house_style,
+        house_style_inject=inject,
     )

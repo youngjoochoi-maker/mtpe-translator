@@ -277,6 +277,14 @@
       <div class="grow" style="flex:1;"><label>메모</label><input type="text" id="mNotes" style="width:100%;" /></div>
     </div>
 
+    <div style="margin-top:12px;">
+      <label>공통 규칙 (HOUSE STYLE)
+        <span class="fhelp" style="font-weight:400;">— 이 작품의 서식·검수 규칙. 저장하면 <b>이 작품 모든 단계</b>에 자동 적용됩니다. 비워두면 적용하지 않습니다.</span>
+      </label>
+      <textarea id="mHouseStyle" rows="7" style="width:100%; font-family:inherit;"
+        placeholder="예)&#10;- 호칭 뒤 '-님' 금지 (숙부님 → 숙부)&#10;- 말줄임표는 '…' 사용 ('...' 금지)&#10;- 小姐·姑娘 → 소저·낭자 ('아가씨' 금지)&#10;- 한자는 번체(繁體)로 병기, 인명은 최초 1회만&#10;- 설정집(TB)이 항상 우선"></textarea>
+    </div>
+
     <div class="tunebar">
       <b>🧪 시험 실행 (프롬프트 튜닝)</b>
       <span class="fhelp">— 저장하지 않은 편집본으로 샘플 회차를 돌려, 각 단계 결과를 보고 프롬프트를 고칩니다</span>
@@ -871,6 +879,7 @@ async function mLoadBundle(work, lang, version) {
   mState = { work:d.work, lang:d.lang, version:d.version };
   $("mSrcLang").value = d.source_lang; $("mTgtLang").value = d.target_lang;
   $("mNotes").value = d.notes || "";
+  $("mHouseStyle").value = d.house_style || "";
   renderSteps(d.steps);
   $("mTarget").textContent = `편집 중: ${d.work} / ${d.lang} / ${d.version} — STEP1~${d.steps.length} 프롬프트`;
   await mRefreshNextVer();
@@ -920,6 +929,7 @@ $("mNewTemplate").addEventListener("click", async () => {
   }));
   mState = { work, lang, version:"v1" };
   $("mSrcLang").value = "auto"; $("mTgtLang").value = "한국어"; $("mNotes").value = "";
+  $("mHouseStyle").value = "";
   renderSteps(tpl);
   $("mNewBox").style.display = "none";
   $("mNewWork").value = ""; $("mNewLang").value = "";
@@ -945,6 +955,7 @@ function collectPayload(version) {
     source_lang: $("mSrcLang").value.trim() || "auto",
     target_lang: $("mTgtLang").value.trim() || "한국어",
     notes: $("mNotes").value.trim(),
+    house_style: $("mHouseStyle").value,
     steps,
   };
 }

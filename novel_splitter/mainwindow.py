@@ -59,6 +59,19 @@ from .processor import FileResult, Processor, SplitMode, SplitOptions
 from .utils import get_stem, is_supported_file
 
 
+def _natural_key(name: str):
+    """파일명을 '숫자를 숫자로' 인식해 정렬하기 위한 키.
+
+    문자열 정렬은 '1화, 10화, 2화' 순으로 뒤섞이지만, 이 키를 쓰면
+    '1화, 2화, … 10화' 처럼 사람이 기대하는 순서(회차 순)로 정렬된다.
+    """
+    import re
+    return [
+        int(tok) if tok.isdigit() else tok.lower()
+        for tok in re.split(r"(\d+)", name)
+    ]
+
+
 # ---------------------------------------------------------------------------- #
 # 백그라운드 처리 스레드
 # ---------------------------------------------------------------------------- #
@@ -170,36 +183,26 @@ class MainWindow(QWidget):
     # ------------------------------------------------------------------ #
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
 
-        # 위(설정)와 아래(결과)를 세로 스플리터로 나눠, 경계를 드래그해
-        # 결과 표 영역을 원하는 만큼 넓힐 수 있게 한다.
-        splitter = QSplitter(Qt.Vertical)
+        # 전체를 하나의 세로 스크롤 영역에 담는다.
+        # 각 섹션(①~⑥)은 자기 크기만큼만 차지하고, 남는 공간은 맨 아래 빈 여백으로
+        # 흘려보낸다. → 결과 표가 창을 꽉 채우며 커지지 않고, 설정(①~④)이 항상 위에 보인다.
+        content = QWidget()
+        col = QVBoxLayout(content)
+        col.addWidget(self._build_file_section())
+        col.addWidget(self._build_mode_section())
+        col.addWidget(self._build_output_section())
+        col.addWidget(self._build_run_section())
+        col.addWidget(self._build_result_section())
+        col.addWidget(self._build_platform_section())
+        col.addStretch(1)   # 남는 세로 공간은 아래쪽 빈 여백으로
 
-        # 위쪽: 설정 영역(파일/방식/출력/실행). 창이 작아지면 스크롤된다.
-        top = QWidget()
-        top_layout = QVBoxLayout(top)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.addWidget(self._build_file_section())
-        top_layout.addWidget(self._build_mode_section())
-        top_layout.addWidget(self._build_output_section())
-        top_layout.addWidget(self._build_run_section())
-        top_layout.addStretch(0)
-
-        top_scroll = QScrollArea()
-        top_scroll.setWidgetResizable(True)
-        top_scroll.setWidget(top)
-        top_scroll.setFrameShape(QScrollArea.NoFrame)
-
-        splitter.addWidget(top_scroll)
-        splitter.addWidget(self._build_result_section())
-        splitter.addWidget(self._build_platform_section())
-        # 결과 영역이 넓어지는 방향으로 크기 배분
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 1)
-        splitter.setSizes([500, 340, 300])
-
-        root.addWidget(splitter)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        root.addWidget(scroll)
 
     # --- 1) 파일 선택 / 분량 파악 영역 ----------------------------------- #
     def _build_file_section(self) -> QGroupBox:
@@ -403,7 +406,7 @@ class MainWindow(QWidget):
             1, QHeaderView.Stretch
         )
         # 결과 표가 기본적으로 넉넉히 보이도록 최소 높이 지정(스플리터로 더 키울 수 있음)
-        self.result_table.setMinimumHeight(320)
+        self.result_table.setMinimumHeight(240)
         layout.addWidget(self.result_table, stretch=1)
 
         self.total_label = QLabel("총합: -")
@@ -456,7 +459,7 @@ class MainWindow(QWidget):
         self.compare_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.Stretch
         )
-        self.compare_table.setMinimumHeight(180)
+        self.compare_table.setMinimumHeight(150)
         layout.addWidget(self.compare_table, stretch=1)
 
         return box
@@ -510,6 +513,9 @@ class MainWindow(QWidget):
 
     def _add_files(self, paths: List[str]) -> None:
         """파일 목록에 추가하고 전체 분량을 계산해 표에 표시한다."""
+        # 파일명 안의 숫자를 인식해 '회차 순서'로 정렬해서 담는다.
+        # (그냥 문자열 정렬이면 1화, 10화, 2화 … 처럼 뒤섞인다.)
+        paths = sorted(paths, key=lambda p: _natural_key(os.path.basename(p)))
         added = 0
         for path in paths:
             if not os.path.isfile(path):
