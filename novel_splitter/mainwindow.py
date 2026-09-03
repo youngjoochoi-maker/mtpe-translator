@@ -165,11 +165,17 @@ class MainWindow(QWidget):
 
         self._files: List[str] = []            # 선택된 파일 목록
         self._file_counts: dict = {}           # 파일 경로 -> Counts (분량 파악용)
+        self._file_titles: dict = {}           # 파일 경로 -> 회차 제목(첫 줄) : 대조용
         self._processor = Processor()          # 미리보기(전체 분량)용
         self._counter = Counter()
         self._thread: QThread | None = None
         self._worker: Worker | None = None
         self._results: List[FileResult] = []   # 처리 결과 누적
+        # 플랫폼 대조 시 '우리 측' 기준을 무엇으로 볼지: "results"(방금 분권한 결과)
+        # 또는 "files"(①에서 불러온 파일). 마지막으로 한 동작을 따른다.
+        #  - 분권을 실행하면 "results",
+        #  - ①에서 파일(분권·정리된 회차 파일)을 불러오면 "files".
+        self._our_source: str | None = None
 
         # 플랫폼 회차 대조용
         self._fetch_thread: QThread | None = None
@@ -440,17 +446,18 @@ class MainWindow(QWidget):
 
         # 요약 라벨
         self.platform_summary = QLabel(
-            "분권을 실행한 뒤, 위에 작품 URL을 넣고 [가져와서 대조]를 누르세요. "
-            "회차 수와 제목을 플랫폼 연재분과 비교합니다."
+            "작품 URL을 넣고 [가져와서 대조]를 누르세요. "
+            "① 방금 분권한 결과, 또는 ② ①에서 불러온(분권·정리된) 파일 중 "
+            "마지막으로 다룬 쪽을 플랫폼 연재분과 회차 수·제목까지 비교합니다."
         )
         self.platform_summary.setWordWrap(True)
         self.platform_summary.setStyleSheet("color: gray;")
         layout.addWidget(self.platform_summary)
 
         # 대조 표
-        self.compare_table = QTableWidget(0, 4)
+        self.compare_table = QTableWidget(0, 5)
         self.compare_table.setHorizontalHeaderLabels(
-            ["번호", "우리 분권 제목", "플랫폼 회차", "일치"]
+            ["번호", "우리 파일명", "우리 회차 제목(첫 줄)", "플랫폼 회차", "일치"]
         )
         self.compare_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.compare_table.horizontalHeader().setSectionResizeMode(
@@ -458,6 +465,9 @@ class MainWindow(QWidget):
         )
         self.compare_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.Stretch
+        )
+        self.compare_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.Stretch
         )
         self.compare_table.setMinimumHeight(150)
         layout.addWidget(self.compare_table, stretch=1)
@@ -507,9 +517,12 @@ class MainWindow(QWidget):
     def _on_clear_files(self) -> None:
         self._files.clear()
         self._file_counts.clear()
+        self._file_titles.clear()
         self.file_table.setRowCount(0)
         self.file_summary.setText("분량 요약: -")
         self.btn_export_files.setEnabled(False)
+        # 불러온 파일이 없어졌으니, 남은 분권 결과가 있으면 그쪽 기준으로 되돌린다.
+        self._our_source = "results" if self._results else None
 
     def _add_files(self, paths: List[str]) -> None:
         """파일 목록에 추가하고 전체 분량을 계산해 표에 표시한다."""
@@ -531,6 +544,9 @@ class MainWindow(QWidget):
         if added:
             self._log(f"{added}개 파일 추가됨 (총 {len(self._files)}개)")
             self._update_file_summary()
+            # 파일을 불러왔으므로 플랫폼 대조의 '우리 측' 기준을 불러온 파일로 둔다.
+            # (분권을 새로 실행하면 _on_file_done 에서 다시 "results" 로 바뀜)
+            self._our_source = "files"
 
     def _append_file_row(self, path: str) -> None:
         """파일의 분량을 계산하여 파일 표에 한 줄 추가한다."""
@@ -543,6 +559,7 @@ class MainWindow(QWidget):
             return
 
         self._file_counts[path] = counts
+        self._file_titles[path] = self._first_title(document)
         row = self.file_table.rowCount()
         self.file_table.insertRow(row)
         self.file_table.setItem(row, 0, QTableWidgetItem(os.path.basename(path)))
@@ -550,6 +567,17 @@ class MainWindow(QWidget):
         self.file_table.setItem(row, 2, self._num_item(counts.chars_without_spaces))
         self.file_table.setItem(row, 3, self._num_item(counts.words))
         self.file_table.setItem(row, 4, self._num_item(counts.lines))
+
+    @staticmethod
+    def _first_title(document) -> str:
+        """문서의 '회차 제목'으로 쓸 첫 비어있지 않은 텍스트 줄을 반환한다.
+        (분권 결과의 _chunk_title 과 동일 규칙 — 대조 일관성 유지)"""
+        for block in document.blocks:
+            for unit in block.text_units():
+                text = unit.strip()
+                if text:
+                    return text
+        return ""
 
     def _update_file_summary(self) -> None:
         """불러온 파일들의 분량 요약(총합·평균·최대·최소)을 갱신한다."""
@@ -714,6 +742,8 @@ class MainWindow(QWidget):
         self._refresh_result_table()
         # 결과가 하나라도 생기면 Excel 내보내기 활성화
         self.btn_export.setEnabled(bool(self._results))
+        # 방금 분권을 실행했으므로 플랫폼 대조 기준을 분권 결과로 둔다.
+        self._our_source = "results"
 
     def _refresh_result_table(self) -> None:
         """누적된 모든 결과로 표와 총합을 다시 그린다."""
@@ -824,42 +854,68 @@ class MainWindow(QWidget):
         self._fetch_worker.error.connect(self._on_platform_error)
         self._fetch_thread.start()
 
+    def _collect_our_side(self) -> tuple[list[str], list[str], str]:
+        """
+        플랫폼과 대조할 '우리 측' (제목목록, 파일명목록, 기준설명)을 만든다.
+
+        기준(self._our_source):
+        - "results": 방금 분권한 결과(각 분권 첫 줄 제목, 출력 파일명). 건너뛴 분권 제외.
+        - "files"  : ①에서 불러온 파일들(각 파일 첫 줄 제목, 파일명).
+                     → 분권 직후가 아니라, 이미 분권·정리된 파일을 불러와 대조할 때 사용.
+        - None     : 아직 없음(빈 목록).
+        두 목록은 같은 순서로 1:1 정렬된다.
+        """
+        if self._our_source == "files" and self._files:
+            titles = [self._file_titles.get(p, "") for p in self._files]
+            names = [os.path.basename(p) for p in self._files]
+            return titles, names, "불러온 파일"
+        if self._results:
+            titles, names = [], []
+            for fr in self._results:
+                for c in fr.chunks:
+                    if c.skipped:
+                        continue
+                    titles.append(c.title)
+                    names.append(c.filename)
+            return titles, names, "분권 결과"
+        return [], [], ""
+
     def _on_platform_done(self, result: PlatformResult) -> None:
-        """수집 성공 시 우리 분권 결과와 대조하여 표시한다."""
+        """수집 성공 시 우리(분권 결과 또는 불러온 파일)와 대조하여 표시한다."""
         self._platform_result = result
         self._cleanup_fetch_thread()
         self.btn_fetch.setEnabled(True)
         # 회차 목록을 가져왔으므로 Excel 저장 활성화
         self.btn_export_platform.setEnabled(bool(result.episodes))
 
-        # 우리 분권 제목(각 분권 첫 줄) 목록 - 건너뛴 분권 제외
-        our_titles = [
-            c.title for fr in self._results for c in fr.chunks if not c.skipped
-        ]
+        # 우리 측 제목·파일명 목록(분권 결과 또는 불러온 파일)
+        our_titles, our_names, src_label = self._collect_our_side()
         comparison: Comparison = compare_titles(our_titles, result)
 
         # 요약
         mark = "✅ 일치" if comparison.count_match else "❌ 불일치"
-        self.platform_summary.setText(
+        base = (
             f"작품: {result.work_title or '(제목 미확인)'}  |  "
             f"플랫폼 회차 {comparison.platform_count}개  vs  "
-            f"우리 분권 {comparison.our_count}개  →  회차 수 {mark}"
+            f"우리 {comparison.our_count}개  →  회차 수 {mark}"
         )
-        if not self._results:
-            self.platform_summary.setText(
-                self.platform_summary.text()
-                + "   (분권을 먼저 실행하면 제목까지 나란히 대조됩니다)"
-            )
+        if src_label:
+            base += f"   (우리 측 기준: {src_label})"
+        else:
+            base += "   (분권을 실행하거나, ①에서 분권·정리된 파일을 불러오면 제목까지 대조됩니다)"
+        self.platform_summary.setText(base)
 
-        # 대조 표 채우기
+        # 대조 표 채우기 (번호 · 파일명 · 우리 회차 제목 · 플랫폼 회차 · 일치)
         self.compare_table.setRowCount(0)
-        for row in comparison.rows:
+        for i, row in enumerate(comparison.rows):
             r = self.compare_table.rowCount()
             self.compare_table.insertRow(r)
+            our_name = our_names[i] if i < len(our_names) else ""
             self.compare_table.setItem(r, 0, QTableWidgetItem(str(row.no)))
-            self.compare_table.setItem(r, 1, QTableWidgetItem(row.our_title))
-            self.compare_table.setItem(r, 2, QTableWidgetItem(row.platform_title))
-            # 일치 표시: 제목이 있을 때만 O/X, 한쪽이 비면 누락 표시
+            self.compare_table.setItem(r, 1, QTableWidgetItem(our_name))
+            self.compare_table.setItem(r, 2, QTableWidgetItem(row.our_title))
+            self.compare_table.setItem(r, 3, QTableWidgetItem(row.platform_title))
+            # 일치 표시: 제목이 있을 때만 O/△, 한쪽이 비면 누락 표시
             if not row.our_title and row.platform_title:
                 mark_item = QTableWidgetItem("우리 측 없음")
             elif row.our_title and not row.platform_title:
@@ -867,11 +923,11 @@ class MainWindow(QWidget):
             else:
                 mark_item = QTableWidgetItem("O" if row.title_match else "△")
             mark_item.setTextAlignment(Qt.AlignCenter)
-            self.compare_table.setItem(r, 3, mark_item)
+            self.compare_table.setItem(r, 4, mark_item)
 
         self._log(
-            f"플랫폼 대조: {result.work_title} - 플랫폼 {comparison.platform_count}회차, "
-            f"우리 {comparison.our_count}분권"
+            f"플랫폼 대조({src_label or '기준없음'}): {result.work_title} - "
+            f"플랫폼 {comparison.platform_count}회차, 우리 {comparison.our_count}개"
         )
 
     def _on_platform_error(self, message: str) -> None:
