@@ -1,0 +1,34 @@
+work: 한영
+lang: ko-en
+version: v1
+source_lang: 한국어
+target_lang: 영어
+notes: '한영 표준 5단계(V2.0). 공통규칙은 이 세트의 "공통 규칙(HOUSE STYLE)" 칸에, 각 단계 지시문은 프롬프트 칸에 붙여넣어 사용. 단계 연결·출력추출은 세팅되어 있음.'
+house_style_inject: all
+steps:
+- id: 1
+  name: STEP 1 위험분석
+  file: step1.txt
+  inputs: [source, glossary]
+  extract: tag:o
+- id: 2
+  name: STEP 2 기본번역
+  file: step2.txt
+  inputs: [source, glossary, step1]
+  extract: json:translation
+- id: 3
+  name: STEP 3 영어소설화
+  file: step3.txt
+  inputs: [source, glossary, step1, step2]
+  extract: json:adapted_translation
+- id: 4
+  name: STEP 4 검증·수정
+  file: step4.txt
+  inputs: [source, glossary, step1, step3]
+  extract: json:translation
+- id: 5
+  name: STEP 5 최종 QA
+  file: step5.txt
+  inputs: [source, glossary, step1, step4]
+  extract: json:final_translation
+  output: final

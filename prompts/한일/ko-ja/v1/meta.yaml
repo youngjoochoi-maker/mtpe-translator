@@ -1,0 +1,29 @@
+work: 한일
+lang: ko-ja
+version: v1
+source_lang: 한국어
+target_lang: 일본어
+notes: '한일 표준 5단계(직선 연결). 각 단계는 원문+설정집(TB)+바로 앞 단계 결과를 받음. 프롬프트에 출력형식 지정이 없어 출력추출은 전부 "그대로". 각 단계 지시문은 붙여넣어 사용.'
+house_style_inject: all
+steps:
+- id: 1
+  name: STEP 1 위험분석
+  file: step1.txt
+  inputs: [source, glossary]
+- id: 2
+  name: STEP 2 보수적 번역
+  file: step2.txt
+  inputs: [source, glossary, step1]
+- id: 3
+  name: STEP 3 의미차이 제거
+  file: step3.txt
+  inputs: [source, glossary, step2]
+- id: 4
+  name: STEP 4 자연화
+  file: step4.txt
+  inputs: [source, glossary, step3]
+- id: 5
+  name: STEP 5 최종 QA
+  file: step5.txt
+  inputs: [source, glossary, step4]
+  output: final

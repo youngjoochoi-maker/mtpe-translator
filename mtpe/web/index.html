@@ -793,6 +793,10 @@ function updateCardSummary(el) {
 
 function stepCard(s, idx) {
   const sel = new Set(Array.isArray(s.inputs) ? s.inputs : []);
+  const _ex = s.extract || "";
+  const _exJson = _ex.indexOf("json:") === 0;
+  const _exMode = _exJson ? "json" : (_ex === "tag:o" ? "tag:o" : "");
+  const _exField = _exJson ? _ex.slice(5) : "";
   const chips = inputOptions(idx).map(o =>
     `<label class="ckchip"><input type="checkbox" class="s-in" value="${o.key}" ${sel.has(o.key)?"checked":""}> ${o.label}</label>`
   ).join("") || `<span class="fhelp">선택할 자료 없음(1단계라 이전 결과가 없음)</span>`;
@@ -820,7 +824,7 @@ function stepCard(s, idx) {
       </div>
       <div>
         <div class="flabel">③ 출력 처리 <span class="fhelp">(대부분 끄고/한 곳만 — 안 만져도 됨)</span></div>
-        <label class="ckline" title="AI에게 답을 <o>…</o>로 감싸라고 지시한 단계에서만 켜세요. 켜면 <o>와 </o> 사이의 내용만 뽑아 다음 단계로 넘깁니다."><input type="checkbox" class="s-extract" ${s.extract==="tag:o"?"checked":""}> <span>AI 답변에서 <code>&lt;o&gt;…&lt;/o&gt;</code> 안만 추출 <span class="fhelp">(JSON 감싼 단계만)</span></span></label>
+        <div class="ckline">출력 추출: <select class="s-extract-mode"><option value="" ${_exMode===""?"selected":""}>그대로</option><option value="tag:o" ${_exMode==="tag:o"?"selected":""}>&lt;o&gt;…&lt;/o&gt; 안만</option><option value="json" ${_exMode==="json"?"selected":""}>&lt;o&gt; 안 JSON 항목만</option></select> <input type="text" class="s-extract-field" placeholder="예: final_translation" value="${esc(_exField)}" style="${_exMode==='json'?'':'display:none;'}"> <span class="fhelp">(대부분 '그대로'. JSON으로 감싼 단계만 지정)</span></div>
         <label class="ckline" title="여러 단계 중 완성된 번역물이 나오는 단계 한 곳에 체크. 번역 화면의 최종 결과/다운로드가 이 단계 출력이 됩니다."><input type="checkbox" class="s-final" ${s.final?"checked":""}> <span>이 단계를 <b>완성본(최종 번역)</b>으로 <span class="fhelp">(마지막 단계 1곳)</span></span></label>
       </div>
     </div>
@@ -848,6 +852,11 @@ function stepCard(s, idx) {
     adv.style.display = show ? "block" : "none";
     el.querySelector(".toggleAdv").textContent = show ? "접기 ▴" : "직접 고르기 ▾";
   });
+  const _emSel = el.querySelector(".s-extract-mode");
+  if (_emSel) _emSel.addEventListener("change", () => {
+    const fld = el.querySelector(".s-extract-field");
+    if (fld) fld.style.display = _emSel.value === "json" ? "" : "none";
+  });
   el.querySelector(".t-rerun").addEventListener("click", () => runTune(idx + 1));
   el.querySelector(".t-showprompt").addEventListener("click", () => {
     const p = el.querySelector(".tunePrompt");
@@ -862,7 +871,7 @@ function collectSteps() {
     name: el.querySelector(".s-name").value.trim() || `${i+1}단계`,
     inputs: [...el.querySelectorAll(".s-in:checked")].map(c => c.value),
     model: el.querySelector(".s-model").value.trim(),
-    extract: el.querySelector(".s-extract").checked ? "tag:o" : "",
+    extract: (function(){ const m=el.querySelector(".s-extract-mode").value; if(m==="tag:o")return "tag:o"; if(m==="json"){const f=el.querySelector(".s-extract-field").value.trim(); return f?("json:"+f):"tag:o";} return ""; })(),
     final: el.querySelector(".s-final").checked,
     content: el.querySelector(".s-content").value,
   }));
