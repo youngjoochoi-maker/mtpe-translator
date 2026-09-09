@@ -86,6 +86,8 @@ MODEL_PRESETS = [
     {"label": "Claude Haiku 4.5", "model": "claude-haiku-4-5-20251001"},
     {"label": "OpenAI GPT-4o", "model": "gpt-4o"},
     {"label": "OpenAI o3", "model": "o3"},
+    {"label": "Gemini 3.1 Pro (최신)", "model": "gemini/gemini-3.1-pro-preview"},
+    {"label": "Gemini 3.8 Flash", "model": "gemini/gemini-3.8-flash"},
     {"label": "Gemini 2.5 Pro", "model": "gemini/gemini-2.5-pro"},
 ]
 
