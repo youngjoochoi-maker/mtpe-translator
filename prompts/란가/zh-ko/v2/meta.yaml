@@ -1,0 +1,14 @@
+work: 란가
+lang: zh-ko
+version: v2
+source_lang: 중국어
+target_lang: 한국어
+notes: ''
+steps:
+- id: 1
+  name: 1단계
+  file: step1.txt
+  inputs:
+  - source
+  - glossary
+  extract: tag:o

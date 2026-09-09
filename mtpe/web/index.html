@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MTPE 번역 파이프라인</title>
+<title>MT 추출</title>
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --fg:#e6e8ee; --mut:#9aa3b2;
           --accent:#4f8cff; --ok:#34c759; --run:#ffb020; --err:#ff5c5c;
@@ -82,6 +82,9 @@
   .tab { background:transparent; color:var(--mut); border:1px solid transparent;
          padding:6px 14px; border-radius:8px; font-weight:600; }
   .tab.active { background:var(--tabact); color:var(--fg); border-color:var(--line); }
+  .themebtn { background:transparent; color:var(--fg); border:1px solid var(--line);
+             border-radius:8px; padding:6px 10px; font-size:15px; cursor:pointer; line-height:1; }
+  .themebtn:hover { background:var(--panel2); }
   /* manage view */
   #view-manage { display:none; grid-template-columns:1fr; }
   .bar { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
@@ -179,12 +182,11 @@
 </head>
 <body>
 <header>
-  <h1>MTPE 번역 파이프라인</h1>
-  <span class="sub">작품·언어·버전별 5단계 프롬프트 체인</span>
+  <h1>MT 추출</h1>
   <nav class="tabs">
     <button class="tab active" data-view="translate">번역</button>
     <button class="tab" data-view="manage">프롬프트 관리</button>
-    <button class="tab" id="themeToggle" title="낮/밤 화면 전환" style="min-width:42px;">🌙</button>
+    <button class="themebtn" id="themeToggle" title="낮/밤 화면 전환">🌙</button>
   </nav>
 </header>
 <script>
@@ -767,6 +769,7 @@ function handleRun(ev) {
 
 /* ===== 탭 전환 ===== */
 document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+  if(!t.dataset.view) return;
   document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
   t.classList.add("active");
   const v = t.dataset.view;

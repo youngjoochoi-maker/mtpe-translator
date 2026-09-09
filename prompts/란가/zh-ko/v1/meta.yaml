@@ -1,0 +1,47 @@
+work: 란가
+lang: zh-ko
+version: v1
+source_lang: 중국어
+target_lang: 한국어
+notes: ''
+steps:
+- id: 1
+  name: 1단계
+  file: step1.txt
+  inputs:
+  - source
+  - glossary
+  extract: tag:o
+- id: 2
+  name: 2단계
+  file: step2.txt
+  inputs:
+  - source
+  - glossary
+  - step1
+  extract: json:translation
+- id: 3
+  name: 3단계
+  file: step3.txt
+  inputs:
+  - source
+  - glossary
+  - step2
+  extract: json:enhanced_translation
+- id: 4
+  name: 4단계
+  file: step4.txt
+  inputs:
+  - source
+  - glossary
+  - step3
+  extract: json:adapted_translation
+- id: 5
+  name: 5단계
+  file: step5.txt
+  inputs:
+  - source
+  - glossary
+  - step4
+  output: final
+  extract: json:final_translation
