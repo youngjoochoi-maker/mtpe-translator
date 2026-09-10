@@ -86,10 +86,10 @@ MODEL_PRESETS = [
     {"label": "Claude Haiku 4.5", "model": "claude-haiku-4-5-20251001"},
     {"label": "OpenAI GPT-4o", "model": "gpt-4o"},
     {"label": "OpenAI o3", "model": "o3"},
-    {"label": "Gemini 3.6 Flash · 무료권장", "model": "gemini/gemini-3.6-flash"},
-    {"label": "Gemini 2.5 Flash · 무료", "model": "gemini/gemini-2.5-flash"},
-    {"label": "Gemini 2.5 Pro · 결제필요", "model": "gemini/gemini-2.5-pro"},
-    {"label": "Gemini 3.1 Pro · 결제필요", "model": "gemini/gemini-3.1-pro-preview"},
+    {"label": "Gemini 3.6 Flash", "model": "gemini/gemini-3.6-flash"},
+    {"label": "Gemini 2.5 Flash", "model": "gemini/gemini-2.5-flash"},
+    {"label": "Gemini 2.5 Pro", "model": "gemini/gemini-2.5-pro"},
+    {"label": "Gemini 3.1 Pro", "model": "gemini/gemini-3.1-pro-preview"},
 ]
 
 
