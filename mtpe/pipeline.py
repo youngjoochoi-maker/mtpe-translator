@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +31,10 @@ class StageResult:
     user_prompt: str = ""  # 실제로 보낸 프롬프트(튜닝 화면에서 확인용)
     skipped: bool = False  # 프롬프트가 비어 LLM 호출 없이 건너뛴 단계
     error: str = ""        # 모델 빈 응답 등으로 실패(직전 결과로 대체됨)
+    seconds: float = 0.0   # 이 단계 소요 시간(초)
+    in_tokens: int = 0     # 입력 토큰(추정)
+    out_tokens: int = 0    # 출력 토큰(추정)
+    cost: float = 0.0      # 예상 비용(USD)
 
 
 def extract_output(text: str, rule: str | None) -> str:
@@ -68,6 +73,26 @@ def extract_output(text: str, rule: str | None) -> str:
             pass
         return (m.group(1).strip() if m else text.strip())  # 실패 시 원본 유지
     return text
+
+
+def estimate_usage(model: str, in_text: str, out_text: str):
+    """litellm 으로 입력/출력 토큰과 예상 비용(USD)을 추정. 실패 시 0.
+    (실제 실행 후엔 out_text 가 진짜 출력이라 비교적 정확, 알 수 없는 모델은 비용 0)"""
+    it = ot = 0
+    try:
+        import litellm
+        it = litellm.token_counter(model=model, text=in_text or "")
+        ot = litellm.token_counter(model=model, text=out_text or "")
+    except Exception:
+        return 0, 0, 0.0
+    cost = 0.0
+    try:
+        import litellm
+        pc, cc = litellm.cost_per_token(model=model, prompt_tokens=it, completion_tokens=ot)
+        cost = float(pc or 0) + float(cc or 0)
+    except Exception:
+        cost = 0.0
+    return it, ot, cost
 
 
 _HS_HEADER = "[공통 규칙(HOUSE STYLE) — 아래 규칙을 반드시 준수]"
@@ -208,6 +233,7 @@ class Pipeline:
                 inject_house_style=self.bundle.house_style_applies(step),
             )
             # 모델이 빈 응답(토큰한도/안전필터)을 주면 회차를 죽이지 않고 직전 결과로 대체 + 경고 표시.
+            _t0 = time.time()
             try:
                 raw = llm_fn(
                     model=model,
@@ -220,6 +246,9 @@ class Pipeline:
                 err = ""
             except EmptyResponseError as exc:
                 raw, output, err = "", last_nonempty, str(exc)
+            _sec = time.time() - _t0
+            _in, _out, _cost = estimate_usage(
+                model, (self.system_prompt or "") + "\n" + user_prompt, raw)
 
             artifacts[f"step{step.id}"] = output
             last_output = output
@@ -231,6 +260,7 @@ class Pipeline:
             yield StageResult(
                 id=step.id, name=step.name, model=model, output=output, raw=raw,
                 user_prompt=user_prompt, error=err,
+                seconds=_sec, in_tokens=_in, out_tokens=_out, cost=_cost,
             )
 
         # 최종이 비었으면(마지막 단계가 빈 응답·빈 프롬프트였던 경우) 직전 정상 결과로 대체

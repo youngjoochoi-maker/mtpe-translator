@@ -757,6 +757,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
             total = len(eids)
             yield emit({"type": "run_start", "total": total,
                         "tb": (tb.name if tb else None)})
+            g_sec = 0.0; g_in = 0; g_out = 0; g_cost = 0.0
 
             for idx, eid in enumerate(eids):
                 p = _episode_path(work, eid)
@@ -771,22 +772,71 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                             "index": idx, "total": total, "version": b.version,
                             "steps": [{"id": s.id, "name": s.name} for s in b.steps]})
                 llm = _mock_llm if (model == "mock") else None
+                ep_sec = 0.0; ep_in = 0; ep_out = 0; ep_cost = 0.0
                 for r in pipe.run_iter(source, tb_text, model_override=model, llm=llm):
+                    ep_sec += r.seconds; ep_in += r.in_tokens
+                    ep_out += r.out_tokens; ep_cost += r.cost
                     yield emit({"type": "step", "episode": eid, "id": r.id,
                                 "name": r.name, "model": r.model,
                                 "chars": len(r.output), "output": r.output,
-                                "skipped": r.skipped, "error": r.error})
+                                "skipped": r.skipped, "error": r.error,
+                                "seconds": round(r.seconds, 2), "in_tokens": r.in_tokens,
+                                "out_tokens": r.out_tokens, "cost": r.cost})
                 outd = _work_dir(work) / "output" / Path(eid).stem
                 outd.mkdir(parents=True, exist_ok=True)
                 (outd / "final.txt").write_text(pipe.final_output, encoding="utf-8")
+                g_sec += ep_sec; g_in += ep_in; g_out += ep_out; g_cost += ep_cost
                 yield emit({"type": "episode_final", "episode": eid,
                             "output": pipe.final_output,
-                            "saved": str(outd / "final.txt")})
-            yield emit({"type": "all_done", "count": total})
+                            "saved": str(outd / "final.txt"),
+                            "seconds": round(ep_sec, 2), "in_tokens": ep_in,
+                            "out_tokens": ep_out, "cost": ep_cost})
+            yield emit({"type": "all_done", "count": total,
+                        "seconds": round(g_sec, 2), "in_tokens": g_in,
+                        "out_tokens": g_out, "cost": g_cost})
         except Exception as exc:  # noqa: BLE001
             yield emit({"type": "error", "message": str(exc)})
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+@app.post("/api/estimate")
+def estimate_run(payload: dict = Body(...)) -> JSONResponse:
+    """실행 전 대략 예상: 선택 회차·모델 기준 예상 토큰·비용·시간(러프)."""
+    from .pipeline import estimate_usage
+    work = payload.get("work"); lang = payload.get("lang")
+    version = payload.get("version") or None
+    model = payload.get("model") or ""
+    eids = payload.get("episodes", [])
+    if not eids:
+        return JSONResponse({"ok": False, "error": "회차를 선택하세요."}, status_code=400)
+    try:
+        pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
+        nsteps = max(1, len(pipe.bundle.steps))
+    except Exception:
+        nsteps = 5
+    parts = []
+    for eid in eids:
+        pp = _episode_path(work, eid)
+        if pp:
+            try:
+                parts.append(read_text(str(pp)))
+            except Exception:
+                pass
+    src_tok, _, _ = estimate_usage(model, "\n".join(parts), "")
+    est_in = int(src_tok * nsteps * 1.8)   # 단계마다 원문+누적 재전송(러프)
+    est_out = int(src_tok * nsteps * 1.0)  # 단계별 출력 ~원문 수준(러프)
+    cost = 0.0
+    try:
+        import litellm
+        pc, cc = litellm.cost_per_token(model=model, prompt_tokens=est_in, completion_tokens=est_out)
+        cost = float(pc or 0) + float(cc or 0)
+    except Exception:
+        cost = 0.0
+    est_seconds = int(nsteps * len(eids) * 18)  # 매우 러프(모델 속도 따라 크게 다름)
+    return JSONResponse({"ok": True, "episodes": len(eids), "steps": nsteps,
+                         "src_tokens": src_tok, "est_in": est_in, "est_out": est_out,
+                         "est_cost": cost, "est_seconds": est_seconds})
 
 
 # ── 자동화(n8n 등) API — 요청 1번 → JSON 1번(비스트리밍) ──────────

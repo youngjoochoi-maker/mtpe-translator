@@ -268,6 +268,8 @@
 
     <button class="runbtn" id="runBtn">▶ 선택 회차 번역 (<span id="runCount">0</span>)</button>
     <div id="runNote" class="note" style="display:none;"></div>
+    <button class="sec" id="estBtn" style="width:100%; margin-top:8px;">🔎 예상 시간·비용 보기</button>
+    <div id="estInfo" class="note ok" style="display:none;"></div>
   </section>
 
   <!-- 우측: 결과 -->
@@ -576,7 +578,8 @@ $("tbUpload").addEventListener("click", async () => {
   const fd = new FormData(); fd.append("work", $("workSelect").value); fd.append("file", f);
   const d = await (await fetch("/api/library/tb", { method:"POST", body:fd })).json();
   if (d.ok === false) return alert(d.error || "업로드 실패");
-  $("tbFile").value = ""; loadLibrary();
+  $("tbFile").value = ""; await loadLibrary();
+  toast("설정집 업로드됨: " + ((d.tb && d.tb.name) || f.name) + " (작품: " + $("workSelect").value + ")");
 });
 $("tbDel").addEventListener("click", async () => {
   if (!confirm("현재 설정집을 삭제할까요?")) return;
@@ -663,6 +666,28 @@ async function makeEvalSheet(fin, episode) {
   } catch (e) { status.textContent = ""; out.innerHTML = `<div class="note">요청 실패: ${e}</div>`; }
 }
 
+function fmtSec(s){ s=Math.round(s||0); if(s<60) return s+"초"; return Math.floor(s/60)+"분 "+(s%60)+"초"; }
+function fmtTok(n){ return (n||0).toLocaleString()+"토큰"; }
+function fmtCost(c){ c=Number(c)||0; if(c<=0) return "$0 (무료/가격정보 없음)"; if(c<0.01) return "$"+c.toFixed(4); return "$"+c.toFixed(3); }
+$("estBtn").addEventListener("click", async () => {
+  const eids = [...document.querySelectorAll("#epList .epchk:checked")].map(c => c.value);
+  if (!eids.length) return alert("회차를 먼저 선택하세요.");
+  const model = currentModel();
+  if (!model) return alert("모델을 선택/입력하세요.");
+  $("estInfo").style.display = "block"; $("estInfo").textContent = "예상 계산 중…";
+  try {
+    const resp = await fetch("/api/estimate", { method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ work:$("workSelect").value, lang:$("langSelect").value,
+        version:$("versionSelect").value, model, episodes:eids }) });
+    const d = await resp.json();
+    if (!d.ok) { $("estInfo").textContent = d.error || "예상 실패"; return; }
+    const tok = (d.est_in||0)+(d.est_out||0);
+    $("estInfo").innerHTML = `대략 예상 (${d.episodes}회차 · ${d.steps}단계)<br>`
+      + `⏱ 시간 ~${fmtSec(d.est_seconds)} · 🔤 토큰 ~${fmtTok(tok)} · 💲 비용 ~${fmtCost(d.est_cost)}`
+      + `<br><span class="fhelp">※ 러프한 추정이에요. 실제 값은 실행하면 정확히 표시됩니다.</span>`;
+  } catch(e) { $("estInfo").textContent = "예상 요청 실패: " + e.message; }
+});
 $("runBtn").addEventListener("click", async () => {
   const eids = [...document.querySelectorAll("#epList .epchk:checked")].map(c => c.value);
   if (!eids.length) return alert("번역할 회차를 선택하세요.");
@@ -675,6 +700,10 @@ $("runBtn").addEventListener("click", async () => {
     return;
   }
   $("runNote").style.display = "none";
+  const _tbName = ($("tbName").textContent || "").trim();
+  if (!_tbName || _tbName === "없음") {
+    if (!confirm("이 작품에는 설정집(TB)이 없습니다.\n설정집이 없으면 한자 병기·역주가 제대로 안 나올 수 있어요.\n\n그래도 이대로 진행할까요?")) return;
+  }
   $("runBtn").disabled = true; $("runBtn").textContent = "번역 중…";
   $("episodes").innerHTML = "";
 
@@ -706,7 +735,7 @@ $("runBtn").addEventListener("click", async () => {
 let curStep = null;
 function handleRun(ev) {
   if (ev.type === "run_start") {
-    // 안내만
+    toast(ev.tb ? ("설정집 사용: " + ev.tb) : "설정집 없이 진행");
   } else if (ev.type === "episode_start") {
     const block = epBlock(ev.episode, ev.index, ev.total, ev.steps);
     $("episodes").appendChild(block);
@@ -725,7 +754,8 @@ function handleRun(ev) {
       el.querySelector(".meta").textContent = "⚠ 모델 빈 응답";
       el.querySelector(".body").textContent = `⚠ ${ev.error}\n\n→ 이 단계 결과 대신 직전 단계 결과를 최종으로 사용했습니다. 다시 시도하면 정상 처리될 수 있어요.`;
     } else {
-      el.querySelector(".meta").textContent = `${ev.model} · ${ev.chars}자`;
+      el.querySelector(".meta").textContent = `${ev.model} · ${ev.chars}자`
+        + (ev.seconds != null ? ` · ${fmtSec(ev.seconds)} · ${fmtCost(ev.cost)}` : "");
       el.querySelector(".body").textContent = ev.output;
     }
     const next = el.nextElementSibling;
@@ -756,12 +786,21 @@ function handleRun(ev) {
     fin.querySelector(".b-docx").addEventListener("click", () => makeDocx(fin, ev.episode));
     fin.querySelector(".ev-gen").addEventListener("click", () => makeEvalSheet(fin, ev.episode));
     block.querySelector(".epbody").appendChild(fin);
+    if (ev.seconds != null) {
+      const sm = document.createElement("div"); sm.className = "note ok";
+      sm.innerHTML = `이 회차 — 소요 ${fmtSec(ev.seconds)} · 입력 ${fmtTok(ev.in_tokens)} · 출력 ${fmtTok(ev.out_tokens)} · 비용 ${fmtCost(ev.cost)}`;
+      block.querySelector(".epbody").appendChild(sm);
+    }
   } else if (ev.type === "episode_error") {
     const block = $("ep-" + cssEsc(ev.episode));
     if (block) block.querySelector(".epstat").textContent = "오류: " + ev.message;
     else { $("runNote").style.display="block"; $("runNote").textContent = `${ev.episode}: ${ev.message}`; }
   } else if (ev.type === "all_done") {
-    // 끝
+    if (ev.seconds != null) {
+      $("runNote").style.display = "block"; $("runNote").className = "note ok";
+      const tok = (ev.in_tokens||0)+(ev.out_tokens||0);
+      $("runNote").innerHTML = `✅ 전체 완료 (${ev.count}회차) — 총 소요 ${fmtSec(ev.seconds)} · 총 토큰 ${fmtTok(tok)} · 총 비용 ${fmtCost(ev.cost)}`;
+    }
   } else if (ev.type === "error") {
     $("runNote").style.display = "block"; $("runNote").textContent = "오류: " + ev.message;
   }
