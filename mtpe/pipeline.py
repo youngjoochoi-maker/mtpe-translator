@@ -75,16 +75,26 @@ def extract_output(text: str, rule: str | None) -> str:
     return text
 
 
-def estimate_usage(model: str, in_text: str, out_text: str):
-    """litellm 으로 입력/출력 토큰과 예상 비용(USD)을 추정. 실패 시 0.
-    (실제 실행 후엔 out_text 가 진짜 출력이라 비교적 정확, 알 수 없는 모델은 비용 0)"""
-    it = ot = 0
+def _count_tok(model: str, text: str) -> int:
+    """토큰 수 추정. litellm 우선, 실패하거나 0 이면 문자 기반 폴백(대략 1토큰≈2자).
+    → 어떤 모델이든 0 이 아닌 합리적인 값을 돌려줘 예상이 0 으로 뜨는 사고를 막는다."""
+    if not text:
+        return 0
     try:
         import litellm
-        it = litellm.token_counter(model=model, text=in_text or "")
-        ot = litellm.token_counter(model=model, text=out_text or "")
+        n = int(litellm.token_counter(model=model, text=text) or 0)
+        if n > 0:
+            return n
     except Exception:
-        return 0, 0, 0.0
+        pass
+    return max(1, len(text) // 2)
+
+
+def estimate_usage(model: str, in_text: str, out_text: str):
+    """입력/출력 토큰과 예상 비용(USD)을 추정. 토큰은 폴백까지 있어 0 이 안 나온다.
+    비용은 모델 단가를 모르면 0(무료/미상)."""
+    it = _count_tok(model, in_text or "")
+    ot = _count_tok(model, out_text or "")
     cost = 0.0
     try:
         import litellm
@@ -93,6 +103,41 @@ def estimate_usage(model: str, in_text: str, out_text: str):
     except Exception:
         cost = 0.0
     return it, ot, cost
+
+
+def estimate_pipeline_usage(pipe, source: str, glossary: str, model: str):
+    """실행 전 예상. 실제 단계 구성(시스템프롬프트 + 단계지시문 + 원문 + 설정집(TB)
+    + 누적 단계출력)을 그대로 모사해 입력/출력 토큰과 실제 호출 수를 계산한다.
+    LLM 은 호출하지 않는다. 반환: (입력토큰, 출력토큰, 호출수)."""
+    sys_t = _count_tok(model, getattr(pipe, "system_prompt", "") or "")
+    src_t = _count_tok(model, source or "")
+    glo_t = _count_tok(model, glossary or "(설정집 없음)")
+    hs = (getattr(pipe.bundle, "house_style", "") or "")
+    hs_t = _count_tok(model, hs)
+    art = {
+        "source": src_t,
+        "glossary": glo_t,
+        "source_lang": _count_tok(model, getattr(pipe.bundle, "source_lang", "") or ""),
+        "target_lang": _count_tok(model, getattr(pipe.bundle, "target_lang", "") or ""),
+    }
+    in_total = out_total = calls = 0
+    for step in pipe.bundle.steps:
+        instr = pipe.bundle.step_text(step)
+        if not (instr or "").strip():
+            # 빈 단계는 LLM 호출 없이 직전 결과를 통과 → 토큰/호출 없음
+            art[f"step{step.id}"] = art.get(f"step{step.id}", src_t)
+            continue
+        calls += 1
+        step_in = sys_t + _count_tok(model, instr)
+        if hs.strip() and pipe.bundle.house_style_applies(step):
+            step_in += hs_t
+        for key in step.inputs:
+            step_in += art.get(key, 0)
+        step_out = int(src_t * 1.15)  # 각 단계 출력 ≈ 원문 길이(+JSON 래핑 여유)
+        in_total += step_in
+        out_total += step_out
+        art[f"step{step.id}"] = step_out
+    return in_total, out_total, calls
 
 
 _HS_HEADER = "[공통 규칙(HOUSE STYLE) — 아래 규칙을 반드시 준수]"

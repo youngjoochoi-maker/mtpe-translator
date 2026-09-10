@@ -758,6 +758,10 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
             yield emit({"type": "run_start", "total": total,
                         "tb": (tb.name if tb else None)})
             g_sec = 0.0; g_in = 0; g_out = 0; g_cost = 0.0
+            import re as _re_zip
+            safe_work = _re_zip.sub(r'[\\/:*?"<>|]', "", str(work)).strip() or "WORK"
+            out_root = _work_dir(work) / "output"
+            saved_docs = []  # [(stem, fname, path)] — 완료 시 자동 저장된 Word 파일들
 
             for idx, eid in enumerate(eids):
                 p = _episode_path(work, eid)
@@ -785,15 +789,44 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                 outd = _work_dir(work) / "output" / Path(eid).stem
                 outd.mkdir(parents=True, exist_ok=True)
                 (outd / "final.txt").write_text(pipe.final_output, encoding="utf-8")
+                # 완료 즉시 Word(.docx) 자동 저장 — 창을 닫아도 결과가 남도록
+                doc_name = f"{safe_work}_{Path(eid).stem}.docx"
+                try:
+                    import docx as _docx
+                    _d = _docx.Document()
+                    for _line in pipe.final_output.split("\n"):
+                        _d.add_paragraph(_line)
+                    _d.save(str(outd / doc_name))
+                    saved_docs.append((Path(eid).stem, doc_name, str(outd / doc_name)))
+                except Exception:
+                    doc_name = None
                 g_sec += ep_sec; g_in += ep_in; g_out += ep_out; g_cost += ep_cost
                 yield emit({"type": "episode_final", "episode": eid,
                             "output": pipe.final_output,
                             "saved": str(outd / "final.txt"),
                             "seconds": round(ep_sec, 2), "in_tokens": ep_in,
                             "out_tokens": ep_out, "cost": ep_cost})
+            # 자동 전달 정보: 저장 폴더 + 회차별 Word 링크 (+2회차 이상이면 ZIP 묶음)
+            auto = {"dir": str(out_root), "files": [], "zip": None}
+            for _stem, _fname, _ in saved_docs:
+                auto["files"].append({"name": _fname,
+                    "url": f"/api/export-docx-download?work={quote(work)}&episode={quote(_stem)}&name={quote(_fname)}"})
+            if len(saved_docs) >= 2:
+                try:
+                    import zipfile as _zip
+                    from datetime import datetime as _dt
+                    zip_name = f"{safe_work}_batch_{_dt.now():%Y%m%d_%H%M}.zip"
+                    with _zip.ZipFile(str(out_root / zip_name), "w", _zip.ZIP_DEFLATED) as zf:
+                        for _stem, _fname, _fpath in saved_docs:
+                            if Path(_fpath).exists():
+                                zf.write(_fpath, arcname=_fname)
+                    auto["zip"] = {"name": zip_name,
+                        "url": f"/api/export-zip-download?work={quote(work)}&name={quote(zip_name)}"}
+                except Exception:
+                    auto["zip"] = None
             yield emit({"type": "all_done", "count": total,
                         "seconds": round(g_sec, 2), "in_tokens": g_in,
-                        "out_tokens": g_out, "cost": g_cost})
+                        "out_tokens": g_out, "cost": g_cost, "auto": auto})
         except Exception as exc:  # noqa: BLE001
             yield emit({"type": "error", "message": str(exc)})
 
@@ -802,8 +835,9 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
 
 @app.post("/api/estimate")
 def estimate_run(payload: dict = Body(...)) -> JSONResponse:
-    """실행 전 대략 예상: 선택 회차·모델 기준 예상 토큰·비용·시간(러프)."""
-    from .pipeline import estimate_usage
+    """실행 전 예상: 실제 단계 구성(시스템+지시문+원문+설정집(TB)+누적출력)을 모사해
+    회차·모델 기준 예상 토큰·비용·시간을 계산한다(러프하지만 실제와 근접)."""
+    from .pipeline import estimate_pipeline_usage
     work = payload.get("work"); lang = payload.get("lang")
     version = payload.get("version") or None
     model = payload.get("model") or ""
@@ -812,20 +846,22 @@ def estimate_run(payload: dict = Body(...)) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "회차를 선택하세요."}, status_code=400)
     try:
         pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
-        nsteps = max(1, len(pipe.bundle.steps))
-    except Exception:
-        nsteps = 5
-    parts = []
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"설정 로드 실패: {e}"}, status_code=400)
+    nsteps = max(1, len(pipe.bundle.steps))
+    glossary = _read_tb_text(work)  # 설정집(TB) — 실제 실행처럼 단계마다 재전송됨
+    est_in = est_out = calls = 0
+    read_ok = 0
     for eid in eids:
         pp = _episode_path(work, eid)
+        src = ""
         if pp:
             try:
-                parts.append(read_text(str(pp)))
+                src = read_text(str(pp)); read_ok += 1
             except Exception:
-                pass
-    src_tok, _, _ = estimate_usage(model, "\n".join(parts), "")
-    est_in = int(src_tok * nsteps * 1.8)   # 단계마다 원문+누적 재전송(러프)
-    est_out = int(src_tok * nsteps * 1.0)  # 단계별 출력 ~원문 수준(러프)
+                src = ""
+        i, o, c = estimate_pipeline_usage(pipe, src, glossary, model)
+        est_in += i; est_out += o; calls += c
     cost = 0.0
     try:
         import litellm
@@ -833,9 +869,11 @@ def estimate_run(payload: dict = Body(...)) -> JSONResponse:
         cost = float(pc or 0) + float(cc or 0)
     except Exception:
         cost = 0.0
-    est_seconds = int(nsteps * len(eids) * 18)  # 매우 러프(모델 속도 따라 크게 다름)
+    # 시간: 호출당 지연(~2.5s) + 출력 토큰 처리량(~45토큰/s). 모델 속도에 따라 편차 큼.
+    est_seconds = int(calls * 2.5 + est_out / 45.0)
     return JSONResponse({"ok": True, "episodes": len(eids), "steps": nsteps,
-                         "src_tokens": src_tok, "est_in": est_in, "est_out": est_out,
+                         "calls": calls, "read_ok": read_ok, "tb_used": bool(glossary),
+                         "est_in": est_in, "est_out": est_out,
                          "est_cost": cost, "est_seconds": est_seconds})
 
 
@@ -1166,6 +1204,62 @@ def export_docx_download(work: str, episode: str, name: str):
         str(fp), filename=name,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+@app.post("/api/export-zip")
+def export_zip(payload: dict = Body(...)) -> JSONResponse:
+    """한 번에 뽑은 여러 회차의 최종 결과를 ZIP(회차별 .docx 또는 .txt)으로 묶어 저장."""
+    import io as _io
+    import re as _re
+    import zipfile
+    from datetime import datetime
+
+    import docx  # python-docx
+
+    work = payload.get("work")
+    items = payload.get("items") or []   # [{episode, text}, ...]
+    fmt = (payload.get("format") or "docx").lower()
+    if not work or not items:
+        return JSONResponse({"ok": False, "error": "작품과 회차 결과가 필요합니다."}, status_code=400)
+    safe_work = _re.sub(r'[\\/:*?"<>|]', "", str(work)).strip() or "WORK"
+    try:
+        out_dir = _work_dir(work) / "output"
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    zipname = f"{safe_work}_batch_{datetime.now():%Y%m%d_%H%M}.zip"
+    zpath = out_dir / zipname
+    n = 0
+    with zipfile.ZipFile(str(zpath), "w", zipfile.ZIP_DEFLATED) as zf:
+        for it in items:
+            stem = Path(str(it.get("episode", ""))).stem or f"회차{n+1}"
+            text = it.get("text") or ""
+            safe_stem = _re.sub(r'[\\/:*?"<>|]', "", stem).strip() or f"회차{n+1}"
+            member = f"{safe_work}_{safe_stem}"
+            if fmt == "txt":
+                zf.writestr(member + ".txt", text)
+            else:
+                doc = docx.Document()
+                for line in text.split("\n"):
+                    doc.add_paragraph(line)
+                bio = _io.BytesIO()
+                doc.save(bio)
+                zf.writestr(member + ".docx", bio.getvalue())
+            n += 1
+    return JSONResponse({"ok": True, "filename": zipname, "count": n, "dir": str(out_dir),
+        "url": f"/api/export-zip-download?work={quote(work)}&name={quote(zipname)}"})
+
+
+@app.get("/api/export-zip-download")
+def export_zip_download(work: str, name: str):
+    """생성된 배치 ZIP 파일 다운로드."""
+    try:
+        fp = _work_dir(work) / "output" / _safe_seg(name)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    if not fp.exists() or fp.suffix.lower() != ".zip":
+        return JSONResponse({"error": "파일을 찾을 수 없습니다."}, status_code=404)
+    return FileResponse(str(fp), filename=name, media_type="application/zip")
 
 
 @app.on_event("startup")

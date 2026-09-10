@@ -43,5 +43,5 @@ steps:
   - source
   - glossary
   - step4
-  output: final
   extract: json:final_translation
+  output: final

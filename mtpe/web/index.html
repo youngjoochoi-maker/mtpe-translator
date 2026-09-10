@@ -32,7 +32,7 @@
   .panel h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em;
               color:var(--mut); margin:0 0 12px; }
   label { display:block; font-size:12px; color:var(--mut); margin:10px 0 4px; }
-  select, input[type=text], input[type=password] {
+  select, input[type=text], input[type=password], textarea {
     width:100%; background:var(--field); color:var(--fg); border:1px solid var(--line);
     border-radius:7px; padding:8px 10px; font-size:13px; }
   input[type=file] { width:100%; font-size:12px; color:var(--mut); }
@@ -615,6 +615,71 @@ function epBlock(eid, idx, total, steps) {
 }
 function cssEsc(s){ return s.replace(/[^a-zA-Z0-9_-]/g, c => "_" + c.charCodeAt(0)); }
 
+function autoDeliver(auto) {
+  const box = $("autoDl");
+  const native = !!(window.pywebview);
+  const primary = (auto.zip && auto.zip.url) ? auto.zip : ((auto.files && auto.files[0]) || null);
+  if (native) {
+    // 파일은 이미 디스크에 저장됨 → 저장 폴더를 자동으로 열어줌(창을 닫아도 결과 보존)
+    try {
+      if (window.pywebview.api && window.pywebview.api.reveal_path) window.pywebview.api.reveal_path(auto.dir);
+    } catch (e) {}
+    if (box) {
+      let h = `<button class="sec" id="autoOpen">📂 저장 폴더 열기</button>`;
+      if (auto.zip) h += ` <a href="${auto.zip.url}" download class="evlink">⬇ ${auto.zip.name}</a>`;
+      box.innerHTML = h;
+      const ob = $("autoOpen");
+      if (ob) ob.addEventListener("click", () => {
+        try { if (window.pywebview.api && window.pywebview.api.reveal_path) window.pywebview.api.reveal_path(auto.dir); } catch (e) {}
+      });
+    }
+  } else {
+    // 브라우저: 완료 즉시 자동 다운로드(ZIP 있으면 ZIP, 없으면 단일 파일)
+    if (primary && primary.url) {
+      const a = document.createElement("a");
+      a.href = primary.url; a.download = primary.name || "";
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    if (box) {
+      let links = [];
+      if (auto.zip) links.push(`<a href="${auto.zip.url}" download class="evlink">⬇ ${auto.zip.name}</a>`);
+      links = links.concat((auto.files || []).map(f => `<a href="${f.url}" download class="evlink">⬇ ${f.name}</a>`));
+      box.innerHTML = links.join(" ");
+    }
+  }
+}
+
+async function downloadBatchZip() {
+  const btn = $("zipBtn"), status = $("zipStatus"), out = $("zipResult");
+  const items = [...document.querySelectorAll("#episodes .final")].map(f => ({
+    episode: f.dataset.episode || "",
+    text: (f.querySelector("textarea") ? f.querySelector("textarea").value : "")
+  })).filter(it => it.episode);
+  if (!items.length) { if (status) status.textContent = "다운로드할 결과가 없습니다."; return; }
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = "묶는 중…";
+  if (out) out.innerHTML = "";
+  try {
+    const r = await fetch("/api/export-zip", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ work: $("workSelect").value, items, format: "docx" }) });
+    const d = await r.json();
+    if (d.ok === false) { if (status) status.textContent = ""; if (out) out.innerHTML = `<div class="note">오류: ${d.error}</div>`; return; }
+    if (status) status.textContent = `완료 ✓ (${d.count}개 회차)`;
+    let h = `<a href="${d.url}" download class="evlink">⬇ ${d.filename}</a>`;
+    if (window.pywebview) h += ` <button class="sec zip-open" style="margin-top:6px;">📂 저장 폴더 열기</button>`;
+    if (out) out.innerHTML = h;
+    const openBtn = out ? out.querySelector(".zip-open") : null;
+    if (openBtn) openBtn.addEventListener("click", () => {
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.reveal_path)
+        window.pywebview.api.reveal_path(d.dir);
+    });
+  } catch (e) {
+    if (status) status.textContent = "";
+    if (out) out.innerHTML = `<div class="note">요청 실패: ${e}</div>`;
+  } finally { if (btn) btn.disabled = false; }
+}
+
 async function makeDocx(fin, episode) {
   const status = fin.querySelector(".docx-status");
   const out = fin.querySelector(".docx-result");
@@ -683,9 +748,9 @@ $("estBtn").addEventListener("click", async () => {
     const d = await resp.json();
     if (!d.ok) { $("estInfo").textContent = d.error || "예상 실패"; return; }
     const tok = (d.est_in||0)+(d.est_out||0);
-    $("estInfo").innerHTML = `대략 예상 (${d.episodes}회차 · ${d.steps}단계)<br>`
+    $("estInfo").innerHTML = `대략 예상 (${d.episodes}회차 · ${d.steps}단계${d.tb_used ? " · 설정집 포함" : ""})<br>`
       + `⏱ 시간 ~${fmtSec(d.est_seconds)} · 🔤 토큰 ~${fmtTok(tok)} · 💲 비용 ~${fmtCost(d.est_cost)}`
-      + `<br><span class="fhelp">※ 러프한 추정이에요. 실제 값은 실행하면 정확히 표시됩니다.</span>`;
+      + `<br><span class="fhelp">※ 러프한 추정이에요${d.tb_used ? " (설정집이 매 단계 함께 전송돼 토큰·비용이 커집니다)" : ""}. 실제 값은 실행하면 정확히 표시됩니다.</span>`;
   } catch(e) { $("estInfo").textContent = "예상 요청 실패: " + e.message; }
 });
 $("runBtn").addEventListener("click", async () => {
@@ -765,6 +830,7 @@ function handleRun(ev) {
     block.querySelector(".epstat").textContent = "완료 ✓";
     const fin = document.createElement("div");
     fin.className = "final";
+    fin.dataset.episode = ev.episode;
     fin.innerHTML = `<h2 style="margin-top:14px;">최종 결과</h2>
       <textarea spellcheck="false"></textarea>
       <div class="toolbar"><button class="sec b-copy">복사</button>
@@ -796,11 +862,25 @@ function handleRun(ev) {
     if (block) block.querySelector(".epstat").textContent = "오류: " + ev.message;
     else { $("runNote").style.display="block"; $("runNote").textContent = `${ev.episode}: ${ev.message}`; }
   } else if (ev.type === "all_done") {
+    $("runNote").style.display = "block"; $("runNote").className = "note ok";
+    let html;
     if (ev.seconds != null) {
-      $("runNote").style.display = "block"; $("runNote").className = "note ok";
       const tok = (ev.in_tokens||0)+(ev.out_tokens||0);
-      $("runNote").innerHTML = `✅ 전체 완료 (${ev.count}회차) — 총 소요 ${fmtSec(ev.seconds)} · 총 토큰 ${fmtTok(tok)} · 총 비용 ${fmtCost(ev.cost)}`;
+      html = `✅ 전체 완료 (${ev.count}회차) — 총 소요 ${fmtSec(ev.seconds)} · 총 토큰 ${fmtTok(tok)} · 총 비용 ${fmtCost(ev.cost)}`;
+    } else {
+      html = `✅ 전체 완료 (${ev.count}회차)`;
     }
+    const auto = ev.auto || null;
+    if (auto && (auto.files || []).length) {
+      html += `<div style="margin-top:8px;">💾 결과가 <b>자동 저장</b>되었습니다 (${auto.files.length}개, Word). 창을 닫아도 파일은 남아 있어요.</div>`;
+      html += `<div id="autoDl" style="margin-top:6px;"></div>`;
+    } else if ((ev.count||0) >= 2) {
+      html += `<div style="margin-top:10px;"><button class="sec" id="zipBtn">📦 전체 결과 한 번에 다운로드 (Word ZIP)</button> <span id="zipStatus" class="fhelp"></span><div id="zipResult" style="margin-top:6px;"></div></div>`;
+    }
+    $("runNote").innerHTML = html;
+    const zb = $("zipBtn");
+    if (zb) zb.addEventListener("click", downloadBatchZip);
+    if (auto && (auto.files || []).length) autoDeliver(auto);
   } else if (ev.type === "error") {
     $("runNote").style.display = "block"; $("runNote").textContent = "오류: " + ev.message;
   }
