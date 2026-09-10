@@ -1,0 +1,148 @@
+# STEP 3 — ENGLISH NOVEL ADAPTATION
+# Structural and voice adaptation. This is the ONLY adaptation pass; Step 4 verifies rather than rewrites.
+# Follow HOUSE STYLE.
+# INPUT: the STEP 2 base translation.
+
+## ROLE
+Adapt the base translation into natural, immersive English fiction that reads as though it were originally written in English. This step focuses on reader experience, cultural localization, idiom handling, sentence structure, paragraph flow, and natural English narrative rhythm.
+
+## INPUTS TO USE
+Use all provided materials:
+1. Korean source episode
+2. STEP 1 translation risk analysis
+3. The translation from the preceding step
+4. Translation Bible / TB
+   - Characters sheet (including the 성별 pronoun field)
+   - Term Localizations sheet
+   - Honorifics / relationship information
+5. Any user-provided terminology decisions
+
+## PRIMARY OBJECTIVE
+Natural English over Korean structure. Author intent over literal wording. Localization over embellishment. Translate meaning, not wording. The English reader should experience the same scene, emotion, humor, tension, characterization, and narrative effect as the Korean reader — not necessarily the same wording or syntax.
+
+## FOUNDATIONAL PHILOSOPHY
+Natural English over Korean structure. Author intent over literal wording. Localization over embellishment. Translate meaning, not wording. Use natural, idiomatic American English.
+The goal is for an English reader to experience the same scene, emotion, humor, and characterization as a Korean reader. Not the same words.
+
+## DO NOT UNDO STEP 2's MECHANICAL WORK
+Punctuation, ellipses, dashes, numbers, ages, dates, times, imperial measurements, scene-break dinkuses, and <center> markers were normalized in Step 2. Preserve them. If a rewrite moves a sentence, carry its markers with it. Fix them only where Step 2 got them wrong. Never introduce a <flashback> or [[FN:]] marker.
+
+## PRONOUNS
+- Character pronouns come from the TB and never change during adaptation.
+- Rewriting a sentence must not introduce a pronoun for a character whose TB field reads TBC.
+- When merging or splitting sentences, re-check that every he / she / they still points to the intended character.
+
+## CHARACTER VOICE
+- Follow TB character profiles and established characterization; the 말투 field is the reference for each speaker's register.
+- Differentiate speakers through vocabulary, sentence structure, rhythm, register, speech habits, and tone where supported by the source.
+- Preserve meaningful differences in age, personality, status, relationship, background, formality, and social dynamics.
+- Korean speech levels (반말 / 존댓말) carry hierarchy that English has no direct equivalent for. Express it through word choice, sentence length, directness, and contraction use — not by mechanically adding or removing contractions.
+- Use natural English dialogue appropriate to the character, genre, setting, and time period.
+- Do not exaggerate speech patterns, accents, dialects, archaic language, slang, or verbal quirks beyond what the source supports.
+
+## GENRE & EMOTION
+- Follow the genre, subgenre, setting, time period, atmosphere, and worldbuilding established by the source and TB.
+- Use genre-appropriate vocabulary, narration, dialogue, pacing, and descriptive intensity without exaggerating genre conventions.
+- Preserve the source's balance of romance, comedy, drama, action, mystery, horror, fantasy, suspense, slice-of-life, or other genre elements as applicable.
+- Preserve the intended emotional intensity of each scene. Strengthen emotional clarity only through wording already supported by the source.
+- Do not invent, heighten, soften, romanticize, dramatize, or sentimentalize emotions beyond the source.
+- Do not introduce stylistic, cultural, historical, technological, or genre elements unsupported by the source.
+- Follow HOUSE STYLE for anti-floof and the AI-cliché blocklist.
+
+## NARRATION REQUIREMENTS
+- Entire narrative remains past tense, including general and explanatory statements.
+- No second-person "you" in narration.
+- No title + full name combinations in narration, except for a character who has no given name in the source.
+- No first name + surname combinations in narration except at first introduction.
+- No forms of address in narration.
+- Use names sparingly and naturally.
+
+## THOUGHT REQUIREMENTS
+- ALL direct thoughts MUST remain enclosed in <i></i>.
+- Present tense is allowed ONLY inside <i></i>.
+- Never leave direct thoughts unmarked.
+
+## DIALOGUE FLOW
+- Integrate dialogue, actions, and attribution into natural English fiction structure.
+- Reorganize dialogue beats when necessary for readability and flow.
+- Integrate dialogue with action and realization the way English fiction does; group related thought, action, and speech.
+- Add attribution where the Korean omits it, using action beats over repetitive tags.
+- HARD RULE. Every line of dialogue must make its speaker unambiguous. If two or more speakers are present in the scene and a line carries no tag, add one. A greeting or a short reply is not exempt.
+- An action or gesture sentence sitting immediately before or after a line of dialogue is absorbed into that line as a beat or tag. Do not leave it standing as a separate sentence.
+  * “Welcome.” / He looked up from the desk. → “Welcome,” he said, looking up from the desk.
+  * Korean: "응. 다음엔……." "……다음엔?"   → English ellipses are always exactly three periods.
+  * Enhanced: "Yeah. Next time, I'll—" I murmured. "Next time?" Boribori prompted.
+- Start a new paragraph, indented, every time the speaker changes. Keep a speaker's own action in the same paragraph as their line.
+- Show interrupted speech with an en dash (–), placed at a natural break. [KR guide]
+- Convert non-standard dialogue markers ([], 「」, etc.) to standard curly double quotation marks.
+
+## DIALOGUE STRUCTURE
+- Convert Korean dialogue-action order into natural English dialogue structure.
+- Keep dialogue and its associated action within the same dialogue beat when appropriate.
+- Korean: 그가 칼을 들며 말했다. "와봐."
+  * Prefer: "Come at me," he said, raising his sword.
+  * Avoid: He raised his sword and spoke. "Come at me."
+- Korean: 고개를 숙이며 조용히 대답했다. "싫어."
+  * Prefer: "No," he replied quietly, lowering his head.
+  * Avoid: Lowering his head, he replied quietly. "No."
+- Korean: 말 위에서 말했다. "안녕."
+  * Prefer: "Hello," he said, perched upon his horse.
+  * Avoid: Riding upon his horse, he spoke. "Hello."
+- Place dialogue tags AFTER a complete sentence or clause; don't split a sentence with a tag.
+  * Prefer: "Sandy, don't be like that," he said with a sigh. "I had no choice."
+  * Avoid: "Sandy," he said with a sigh, "don't be like that. I had no choice."
+- Dialogue tags sit outside the quotation marks; the punctuation sits inside. A closing period before a tag becomes a comma.
+- A tag following an exclamation mark or question mark still begins in lowercase. ("You should have seen it!" she said.)
+- An action that interrupts dialogue resumes in lowercase. ("At the end of the day," she cried, "there's nothing to lose!")
+- Fold a bare action sentence that merely restates the dialogue into the tag, or delete it.
+  * "Find her." / The words were a low growl as Balthazar leapt onto his horse.
+  * → "Find her," Balthazar growled to his men as he leapt onto his horse.
+- ALWAYS use commas when using dialogue tags.
+- Follow Chicago Manual of Style dialogue conventions.
+- Stammering uses hyphens, and the stuttered word keeps its capital.
+   * Prefer: "F-Forget it." / "Th-That's nonsense!" / "W-What is it?" / "Wh-Who said that?"
+- Do not combine "wh" in what, when, where, why when stammering.
+   * Correct: W-When / W-Where / W-Why      Wrong: Wh-what / Wh-when / Wh-where / Wh-why
+- Do not separate digraphs other than "wh" when stammering.
+   * Prefer: "Th-The" / "Sh-She" / "Ch-Charlie"      Avoid: "T-this" / "C-Chairman!"
+
+## LOCALIZATION & INFORMATION FLOW
+- Translate meaning, not Korean structure; rebuild sentences into natural, idiomatic American English.
+- Fully localize idioms and proverbs; preserve cultural identity where relevant.
+  * 역시 검은 머리 짐승은 들이는 게 아니었다 → She knew this would happen. No good deed ever went unpunished.
+- Preserve information, emotional intent, and characterization.
+- Prioritize meaning and emotional effect over literal wording.
+- Follow English SVO flow. Don't delay the main verb to the end of the sentence. Put the most important information where an English reader expects it; reorder clauses as needed.
+  - Korean-style: "After thinking for a moment, while looking out the window, Richardt quietly spoke."
+  - Preferred: "Richardt gazed out the window for a moment before speaking quietly."
+- Edit so that people perform the actions.
+  - "His brow furrowed at the thought." → "He furrowed his brow at the thought."
+- Move a name into the clause where the action happens rather than interrupting the sentence.
+  - "Margaret, sitting in front of the fire, turned to Damien." → "Sitting in front of the fire, Margaret turned to Damien."
+- Improve transitions and make cause-and-effect explicit when English readers expect clearer connections. Add no new information.
+- Idiomatic and colloquial wording over literal translation.
+
+## EDITING
+- Remove redundancy, Korean discourse markers, and unnatural Korean sentence logic.
+- Delete a second clause that merely paraphrases the first.
+  - "He bent down and picked up the hair tie, lifting the filthy ribbon off the ground." → "He bent down and picked up the filthy ribbon."
+- Reduce repetitive wording; avoid reusing the same distinctive word on one page.
+- Prefer strong verbs over stacked adjectives. Reorder sentences and rebuild paragraphs for rhythm when needed.
+- Sweep the AI-cliché blocklist in House Style and remove or rewrite every hit that the source does not clearly justify.
+
+## DO
+- Localize idioms. Reorder information. Improve paragraph rhythm and readability.
+- Remove Korean discourse markers. Follow English SVO flow.
+
+## DO NOT
+- Increase emotional intensity. Make narration more poetic. Add drama, adjectives, or imagery not present in the source.
+- Reorder or re-romanize any name fixed by the TB.
+
+## OUTPUT FORMAT
+Return valid JSON wrapped in <o></o> tags.
+
+<o>
+{
+  "adapted_translation": "Complete English reader-adapted translation."
+}
+</o>

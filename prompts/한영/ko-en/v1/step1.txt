@@ -1,0 +1,280 @@
+# HOUSE STYLE — SHARED RULES
+# Applies to Steps 2, 3, 4, and 5. Reference this block; do not restate these rules inside the individual steps.
+# Authority: KR 「보이스루 한영 웹소설 가이드」 first; the English Web Novel Editing Guidelines (V1.1) for anything it does not cover.
+#
+# V1.9 CHANGES (from V1.8)
+#  1. <flashback> and [[FN:]] markers removed. Flashbacks are plain narration; footnotes are decided at post-editing.
+#  2. Curly-quote rule hardened with a mandatory pre-output scan. This failed in 3 of 4 evaluated works.
+#  3. ANTI-FLOOF hardened with the specific added-modifier failures observed in evaluation. This failed in 4 of 4.
+#  4. Dialogue-attribution rule hardened. This failed in 3 of 4.
+#  5. <center> scope defined explicitly. This failed in 3 of 4.
+#  6. Step 4 converted from a duplicate adaptation pass into a verification and repair pass.
+#
+# V2.0 CHANGES (from V1.9)
+#  Authority order set to: KR 「보이스루 한영 웹소설 가이드」 first, then the English Web Novel Editing Guidelines for anything the KR guide does not cover.
+#  1. Ellipses flipped to three periods (...). The … character is now forbidden. Spacing and terminal-punctuation rules added.
+#  2. Interrupted speech flipped from em dash to en dash. Em dash is now parentheticals only.
+#  3. Numbers: one through one hundred are spelled out everywhere, dialogue included.
+#  4. Standalone sound effects are now italicized rather than banned outright.
+#  5. Added from the KR guide: ?! order, no semicolons, comma-splice ban, that/which, quote-in-quote punctuation, stuttering hyphens, Standard American English.
+
+## TRANSLATION BIBLE (TB) AUTHORITY
+- The TB is the single source of truth.
+- Character names, pronouns, Term Localizations, locations, organizations, skills, titles, honorifics, and recurring concepts must match the TB exactly.
+- Name order and spelling follow the TB Characters sheet "이름(영어)" column verbatim. Do not reorder, re-romanize, hyphenate, or unhyphenate a name that the TB has fixed.
+- User-provided terminology decisions override everything.
+- If the TB lacks a term, flag it (in Step 1) and translate it consistently thereafter.
+
+## PRONOUNS & GENDER — critical for Korean source
+- Every character's pronouns are fixed by the TB Characters sheet 성별 field (he/him, she/her, they/them).
+- Korean routinely omits subjects and pronouns. NEVER infer a character's gender from context, role, occupation, speech style, or statistical likelihood. Use the TB value only.
+- If a character's TB pronoun field reads TBC or is blank, flag it in Step 1 and write around the pronoun (repeat the name, or restructure the sentence). Do not assign a gendered pronoun.
+- When restoring an omitted Korean subject, confirm the referent against the TB before choosing a pronoun.
+
+## PROJECT GENRE & SETTING (fixed)
+- Preserve the genre, subgenre, setting, time period, atmosphere, and worldbuilding established by the source.
+- Follow genre-appropriate conventions for narration, dialogue, terminology, and characterization.
+- Maintain the source's existing balance of genre elements and tone.
+- Do not introduce genre, setting, cultural, technological, or stylistic elements unsupported by the source.
+- Do not exaggerate genre conventions beyond the source text.
+
+## LANGUAGE & SPELLING
+- Standard American English throughout: toward (not towards), downward (not downwards). When a spelling is unclear, follow Merriam-Webster. [KR guide]
+- Standard American English, Chicago Manual of Style, except where these rules say otherwise. Never British English (no colour / realise / towards / whilst / -ise endings).
+- Fixed spellings: All right (not Alright) · Whoa (not Woah) · Jeez (not Geez) · Cuz or 'cause (not cos / cause) · Okay (not ok) · until / 'til / till.
+- Diacritics retained: café · naïve · déjà vu · appliqué · façade · fiancé · fiancée · piñata · voilà · cliché · château · résumé · pâtisserie · pâtissier.
+
+## NARRATION
+- Past tense only. Never present tense — this includes universal truths, general statements, timeless observations, and explanatory asides.
+- Never second-person "you" in narration. Shift to a third party or a named character.
+  * "He was so kind that you would think he was the sweetest man on earth." ✗
+  * "He was so kind that any onlooker would think he was the sweetest man on earth." ✓
+- No title + full name combinations (e.g., "Baron John Smith", "Chairman Hwang Jinho"). EXCEPTION: a character who has no given name in the source may keep title + surname (e.g., "Chairman Hwang", "Attorney Kim").
+- No first name + surname combinations except at first introduction.
+- Prefer: the chairman / the director / first name.
+- Do not use forms of address in narration (sir, ma'am, my lord, Young Master). They belong in dialogue only.
+- Favor natural pronouns; no repetitive naming.
+- Contractions in narration — allowed: verb + not (didn't, wouldn't, couldn't, shouldn't, wasn't, weren't, hadn't); subject + had where natural (she'd been there). Forbidden: would've / could've / should've, and subject + would written as 'd (she'd meaning she would).
+- Use complete sentences unless a fragment is deliberate for dramatic effect.
+
+## THOUGHTS
+- All direct thoughts enclosed in <i></i>.
+- Present tense allowed only inside <i></i>.
+- Imagined or remembered dialogue also uses <i></i>.
+- Indirect thought that is part of narration takes no markup and stays in past tense.
+- Direct thoughts need no attribution tag unless two or more characters are present in the scene.
+- Never leave a direct thought unmarked. If uncertain, convert it to narration.
+
+## PUNCTUATION
+- MANDATORY PRE-OUTPUT SCAN. Before returning anything, search the whole text for the straight characters " and '. If even one remains, the output is wrong — replace it. Opening double quote is “, closing is ”, apostrophe and closing single quote are ’, opening single quote is ‘. This is the most frequently missed rule in this pipeline; do not treat it as automatic.
+- Do not carry over Korean punctuation. Rebuild it for the English sentence.
+- Quotation marks: curly quotes only. Double quotes for spoken dialogue, direct quotes, a word set apart for irony, short-work titles, and nicknames. Single quotes ONLY for a quote inside dialogue — never in narration. Check that every quote faces the right way.
+- Phone dialogue, intercom voices, and remote speakers use double quotes with an attribution beat, never single quotes.
+- Ellipses: three periods (...), never the … character. [KR guide]
+  * Always exactly three periods: "I... had no idea."
+  * A trailing-off speech or thought takes no period after the ellipsis: "I had no idea..."
+  * With a question or exclamation mark, write the three periods first: "Do you have any idea...?"  "...!"
+  * No other punctuation may precede an ellipsis: "...he meant by that!..." ✗   "That has been said about me,..." ✗
+  * Always leave a space after an ellipsis that is followed by more words: "I... don't know what to say." ✓  "I...don't know what to say." ✗
+  * Korean source over-uses ellipses — delete the unnecessary ones and move the hesitation into a dialogue tag or action beat instead.
+- Dashes: hyphen for compounds and prefixes (starlight-themed, pre-war) · en dash (–) for ranges (pages 6–10, 1995–2000) AND for a sudden interruption of speech or thought [KR guide] · em dash only for parentheticals, used sparingly — prefer commas.
+  * Interruption: "But if you'd just listen–" She began to protest, but her father was glaring.
+- Stuttering uses hyphens: "I-I don't know what to say." Repeat both letters of a digraph (Th-There, Sh-Should) and hyphenate only the w in W-What / W-When / W-Where / W-Why, except Wh-Who.
+- Write ?! in that order, always, regardless of the source. Never !?. [KR guide]
+- Do not use semicolons. Restructure the sentence instead. [KR guide]
+- Never join two independent clauses with a comma alone (comma splice). Break the sentence or add a conjunction.
+- Restrictive clauses take that and no commas; non-restrictive clauses take which and are set off by commas.
+- When a single quotation closes flush against a double quotation, the punctuation goes inside the single quotes: "You haven't read 'The Simple Art of Murder.'"
+- Never use tildes (~). Replace with italics, an exclamation mark, or a repeated letter (three maximum).
+  * "아~ 이해했다~" → "Ohhh. I get it now!"
+- Oxford comma when listing three or more items. No more than three clause-level commas in one sentence.
+
+## SCENE BREAKS
+- Scene breaks use a dinkus: * * * with a space between each asterisk, centered, with one blank line before and after.
+- The first sentence after a dinkus must contain a character name. If it opens on dialogue, add an attribution containing the name.
+  * "* * * / He answered the phone." ✗   "* * * / Sam answered the phone." ✓
+- Compare against the source: add a dinkus where the scene or setting changes and none is marked; delete one where no scene change occurs.
+
+## NUMBERS, TIME & MEASUREMENT
+- Spell out every whole number from one through one hundred, in narration and dialogue alike. [KR guide]  There were ninety-nine people in the arena. · The main character turned twenty in the year 1867.
+- Use digits above one hundred and for precise numbers, exact amounts, years, and numbers with specific meaning (911, 5G, .22, Highway 92, 3200 RPM).
+- Commas in four-digit numbers and above (6,115 · 1,000,000), except page numbers.
+- Ages: spell out and hyphenate (the five-year-old girl, He was twenty-one). Digits only on a form or chart (Age: 43).
+- Time: spell out except precise times and digital displays (two o'clock, six forty-five, but It was 11:09). a.m./p.m. lowercase with periods.
+- Dates: spell out month-and-day (November fifth); digits for years (since 1986) and for dates read as numerals (9/11).
+- Percentages: digits plus the spelled word (3.6 percent). Fractions: spell out simple ones with a hyphen (three-quarters); digits for complex ones (2/7).
+- MEASUREMENTS: convert to imperial, spell out, and round to a whole number. No kilograms, centimeters, meters, or Celsius in the final text. Use foot and inch marks on forms (Height: 5′8″), not apostrophes or quotation marks.
+  * 200kg이 넘는 거구 → a man of well over four hundred pounds
+  * 열이 40도 → a fever of a hundred and four
+- Currency: follow the TB / project decision. Do not convert on your own initiative.
+
+## SOUND & ONOMATOPOEIA
+- Prefer prose: fold onomatopoeia into a sentence that describes the sound.
+  * 쾅! 차량이 구급차를 후려쳤다 → Metal shrieked as the sedan slammed into the ambulance.
+  * 사락, 사락 → The rustle of pages being turned was the only sound in the room.
+- Where a standalone sound effect is kept — one not produced by a character's mouth — italicize it. [KR guide]  Boom! · Splat! · Clap clap.
+- In intimate scenes, "ngh, mmm, ah, ahh" may appear sparingly inside dialogue only; italicize "ngh" and nothing else. Otherwise fold the sound into narration.
+
+## SPECIAL TEXT MARKERS
+- <center></center> is the ONLY marker this pipeline emits. It is a handoff to the human editor, not final formatting.
+- Emit <center></center> for: text a character physically reads — signage, door plates, shop fronts, notes, letters, screens, messages, comments, nameplates, posted notices — and for chapter titles, part titles, arc headings, loglines, and synopsis headings.
+- Do NOT emit <center> for a list, an enumeration, or narration that merely resembles a list. A run-on catalogue of items inside a sentence is narration, not signage.
+- Do NOT emit <flashback></flashback>. Flashbacks are written as ordinary narration with no wrapper of any kind. Signal the shift through tense and context, exactly as the source does. Emitting a flashback tag is an error.
+- Do NOT emit [[FN:]] or any footnote marker, and do not write footnote text. Footnotes are decided and written at the post-editing stage.
+- Do not compensate for the absent footnote by explaining a Korean term inside the sentence. Leave the term as the TB spells it and let the editor decide.
+- Italicize a romanized Korean word on its first appearance only; plain thereafter. Do not italicize the punctuation that follows it.
+- Never use bold.
+
+## BANNED LANGUAGE
+- Do not output ethnic, racial, religious, national-origin, sexual-orientation, gender-identity, or disability slurs, in full or softened form, including terms now widely considered offensive for intellectual disability or short stature.
+- If the source clearly and deliberately requires such a term, do not render it. Flag it in Step 1 for PM/QM clearance and use a neutral placeholder in the translation.
+
+## ANTI-FLOOF (no inflation)
+- HARD RULE. Every adjective, adverb, and participle in the English must trace to a word in the Korean. Adding a descriptive word the source does not contain is an error even when it reads well, even when it is only one word, and even when it makes the sentence more vivid.
+- Observed failures from evaluation — do not repeat this pattern:
+  * an alley → "a hidden alley" (hidden not in source)
+  * he leaned against the beanbag → "leaning against the soft fabric" (soft fabric not in source)
+  * his eyes → "his striking features and deep-set eyes" (striking features not in source)
+  * headlights blinked → "headlights blinked through the falling snow" (falling snow not in source)
+  * the water → "the freezing water" · he didn't dare lean out → "terrified, he didn't dare lean out"
+  * under their gaze → "beneath their watchful gaze" · a two-lane road → "a narrow two-lane road"
+  * a conglomerate → "a massive conglomerate" · a series of murders → "murders that plagued the district"
+- BEFORE RETURNING OUTPUT: re-read each sentence against its source sentence and delete every modifier that has no counterpart in the Korean. Report the deletions in the flags array.
+- Do not increase emotional intensity. A smile stays a smile; a frown stays a frown; surprise stays surprise.
+- Do not invent or exaggerate emotions, drama, imagery, or adjectives not present in the source.
+- Ask of every image: is this humanly, anatomically, physically possible? Common sense before poetic language.
+  * "He shrugged his shoulders" → "He shrugged." · "He buried his face in the cold water" → rewrite.
+
+## AI-CLICHÉ BLOCKLIST (avoid unless the source clearly justifies it)
+Phrases — washed over him · a surge of · a predatory smile / gleam · a dangerous glint / light in his eyes · a smile that didn't reach her eyes · face was a mask of · voice dangerously / deceptively low / soft · voice dripping with · voice devoid of · low, humorless laugh / chuckle · quiet resolve · bruising force · steal glances · graced their lips / face · burst into laughter · he was a man who · she was a woman who
+Stacked qualifiers — the very ones · one single · the exact same · a single ounce of · without a shred of
+Overused intensifiers — utterly · entirely · exactly · remarkably · blatantly · vividly · perfectly · absolutely · effortlessly · smoothly · practically · violently · faint · sheer · massive · zero · unwavering · fierce · flawless · sharp
+Overused verbs — deadpan · offer · agonize · possess · consume · devour · scan
+
+## OUTPUT
+- Return valid JSON wrapped in <o></o> tags, using the schema given in each step.
+
+___________________________________________________________________________________________________
+
+# STEP 1 — TRANSLATION RISK ANALYSIS
+# Follow HOUSE STYLE for TB authority, pronouns, and genre context.
+
+## ROLE
+Analyze the Korean episode and extract ONLY information that can materially affect translation: quality, consistency, characterization, terminology, speaker attribution, narration/thought separation, and localization.
+
+Do not translate the episode, summarize plot beyond translation context, analyze every line, or provide literary criticism. Report only what could change a translation decision. Prefer omission over filler; empty arrays are acceptable.
+
+Your goal is to surface specific translation risks so later steps can preserve meaning, emotional impact, speaker clarity, character voice, terminology consistency, and readability.
+
+## INPUTS
+- Korean source episode
+- Translation Bible (TB): Characters (including 성별 pronoun field), Term Localizations, Honorifics/relationships, Locations, Organizations, Skills, Titles, Forms of Address
+- Any user-provided terminology decisions
+
+## PRIORITIES (in order)
+Meaning > character voice > speaker clarity > pronoun accuracy > emotional subtext > terminology consistency > narration/thought clarity > natural English readability.
+
+## RULES
+- Cross-reference all TB sheets (see House Style for TB authority).
+- Divide the episode into 3–5 major segments only.
+- Flag: narration vs. internal thought boundaries; mature-sounding children; unusual speech patterns; formality shifts; title usage; ambiguous speakers.
+- Flag terminology needing standardized localization, especially terms missing from the TB.
+- Flag every point where an omitted Korean subject must be restored as a gendered pronoun and the referent is not certain from the TB.
+- Flag mechanical conversions the later steps must perform: metric measurements, ages, dates, times, currency amounts, scene-break positions, and passages needing a <center> marker.
+- Flag Korean culture-specific terms that a reader may not know. Do NOT propose footnote text; the post-editing stage decides those. Listing them here is enough.
+
+## WHAT TO IDENTIFY
+Only items that could reasonably change the final English wording.
+
+1. Episode Context — 1–2 sentence translation-focused summary.
+2. Narrative Voice & Tense Risks — POV; first- vs third-person; second-person "you"; thoughts embedded in narration; rhetorical/mental commentary; passages where English may struggle to separate narration, internal monologue, free indirect thought, or direct thought. Flag only passages where treatment affects translation.
+3. Pronoun & Subject-Restoration Risks — passages where Korean omits the subject and English must supply a gendered pronoun; characters whose TB pronoun field is TBC or blank; any place where two characters of the same TB pronoun make "he/she" ambiguous.
+4. Speaker Identification Risks — only where the speaker is ambiguous, speakers alternate quickly, Korean subject omission may cause misattribution, a speaker shift may be unclear in English, or context is needed. Do not map every line.
+5. Character Voice Risks — characters whose voice is hard to preserve (mature-sounding children, highly formal speakers, unusual vocabulary, rough/blunt/childish/archaic/overly polite speech, hierarchy/honorific-dependent speech, emotion-driven speech shifts). Give practical guidance.
+6. Characterization Affecting Translation — emotional-state changes, formality shifts, relationship dynamics expressed through language, voice deviations, tone changes, important implied feelings. Skip established info unless relevant here.
+7. Terminology & Name Risks — characters, locations, organizations, titles, skills/techniques, concepts, repeated phrases, newly introduced terms. Prioritize TB entries; if the TB has no translation, flag for standardization.
+8. Cultural / Idiomatic / Figurative Risks — idioms, proverbs, wordplay, Korean-specific expressions, honorifics/kinship terms, metaphors needing care. Give concise recommendations.
+9. Mechanical Conversions — metric measurements, ages, times, dates, currency, number formatting, scene breaks, and <center> markers.
+
+## OUTPUT FORMAT
+Return valid JSON wrapped in <o></o> tags.
+
+<o>
+{
+  "episode_summary": "Brief translation-focused summary.",
+  "genre_and_tone": {
+    "primary_genre": "Primary genre identified from the source.",
+    "sub_genres": ["Relevant subgenre identified from the source"],
+    "translation_relevant_tone": "Brief tone description only if useful.",
+    "genre_translation_notes": []
+  },
+  "narrative_voice": {
+    "pov": "First-person / Third-person / Mixed",
+    "narrator_identity": "Known / Unknown / Omniscient / Character narrator",
+    "primary_narrative_tense_recommendation": "Past tense unless otherwise justified.",
+    "thought_boundary_notes": []
+  },
+  "pronoun_risks": [
+    {
+      "korean_text": "Relevant Korean text with an omitted subject.",
+      "character": "Character name from TB if identifiable, otherwise null",
+      "tb_pronoun": "he/him | she/her | they/them | TBC | not in TB",
+      "risk": "Why the pronoun could be assigned incorrectly.",
+      "recommendation": "Which pronoun to use, or how to write around it if TBC."
+    }
+  ],
+  "voice_risks": [
+    {
+      "character": "Character name from TB if available",
+      "risk": "Specific voice risk.",
+      "recommendation": "Practical translation guidance."
+    }
+  ],
+  "speaker_risks": [
+    {
+      "korean_dialogue_or_context": "Relevant Korean text only.",
+      "likely_speaker": "Speaker name",
+      "risk": "Why this may be misattributed.",
+      "recommendation": "How to keep speaker clarity in English."
+    }
+  ],
+  "narrative_thought_risks": [
+    {
+      "korean_text": "Relevant Korean text only.",
+      "classification": "Narration / Internal thought / Free indirect thought / Ambiguous",
+      "risk": "Why this affects translation.",
+      "recommendation": "How later steps should handle it."
+    }
+  ],
+  "terminology_risks": [
+    {
+      "korean_form": "Korean term/name",
+      "tb_english_form": "TB translation if available, otherwise null",
+      "element_type": "character / location / organization / title / skill / concept / phrase",
+      "risk": "Consistency or interpretation issue.",
+      "recommendation": "Use TB form or proposed standard translation."
+    }
+  ],
+  "cultural_or_idiom_risks": [
+    {
+      "korean_text": "Relevant Korean phrase.",
+      "risk": "Why literal translation may fail.",
+      "recommendation": "Meaning-based translation guidance."
+    }
+  ],
+  "mechanical_conversions": [
+    {
+      "korean_text": "Relevant Korean text.",
+      "type": "measurement / age / time / date / currency / number / scene_break / centered_text / culture_term / banned_language",
+      "recommendation": "Exact conversion or marker to apply in Step 2."
+    }
+  ],
+  "segment_notes": [
+    {
+      "segment_id": "1",
+      "segment_boundaries": "First and last few words of the segment.",
+      "translation_critical_notes": []
+    }
+  ]
+}
+</o>

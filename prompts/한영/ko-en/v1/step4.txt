@@ -1,0 +1,88 @@
+# STEP 4 — VERIFICATION & REPAIR PASS
+# Follow HOUSE STYLE.
+# INPUT: the STEP 3 adaptation.
+#
+# CHANGED IN V2.0 — in V1.7 and V1.8 this file repeated STEP 3 almost word for word, so the pipeline ran the same
+# adaptation twice and the second pass drifted further from the source without adding value. This step is now a
+# checking pass. It does not re-adapt. It finds and repairs the specific failures that recurred across all four
+# evaluated works, and leaves everything else untouched.
+
+## ROLE
+Verify the STEP 3 output against the Korean source and the House Style, and repair only what is wrong. Do not rewrite
+sentences that are already correct. Do not improve prose for its own sake. A sentence you did not have to fix should
+come out of this step exactly as it went in.
+
+## INPUTS TO USE
+1. Korean source episode
+2. STEP 1 translation risk analysis
+3. The STEP 3 adaptation
+4. Translation Bible / TB — Characters sheet (including the 성별 pronoun field), Term Localizations sheet, honorifics and relationship information
+5. Any user-provided terminology decisions
+
+## WHAT TO CHECK — in this order
+
+### 1. Added modifiers (highest priority — failed in 4 of 4 works)
+Compare each English sentence with its Korean sentence. Delete every adjective, adverb, and participle that has no
+counterpart in the source, even where it reads well. Typical additions to look for: hidden, soft, striking, falling,
+freezing, terrified, watchful, narrow, massive, plagued, eventually, deeply.
+Do not replace a deleted modifier with a different one. Delete and stop.
+
+### 2. Quotation marks (failed in 3 of 4)
+Search the whole text for the straight characters " and '. Replace every one with the correct curly form.
+Confirm each opening quote faces right and each closing quote faces left. Confirm no single quotes appear in narration.
+
+### 3. Dialogue attribution (failed in 3 of 4)
+Every line of dialogue must make its speaker unambiguous. Where two or more speakers are present and a line has no tag,
+add one. Absorb an action or gesture sentence that sits directly before or after a line into that line as a beat or tag.
+Short lines and greetings are not exempt.
+
+### 4. Markers (failed in 3 of 4)
+Confirm no <flashback> and no [[FN:]] appear anywhere; delete any that do, leaving the text in place.
+Confirm every <center> wraps text a character reads, or a title, and nothing else. Remove <center> from lists and from
+narration that merely resembles a list. Add <center> to chapter titles, part titles, arc headings, loglines, and
+synopsis headings that lack it.
+
+### 5. TB compliance
+Every character name, place name, organization name, and fixed term matches the TB spelling exactly. Where the TB and
+the text differ, the TB wins. Where a name appears in more than one form inside the episode, unify it to the TB form.
+Pronouns match the TB 성별 field. A character whose field reads TBC carries no pronoun — rewrite around it.
+
+### 6. Character voice
+Speakers are distinguishable through vocabulary, register, rhythm, and speech habits, in line with the TB 말투 field.
+Repair only where a speaker has flattened into the same voice as everyone else.
+
+### 7. Residual House Style
+Remaining AI clichés, stacked qualifiers, overused intensifiers, standalone sound effects, metric units, tildes,
+and second-person "you" in narration.
+
+## WHAT NOT TO DO
+- Do not restructure a sentence that is already accurate and natural.
+- Do not localize an idiom that STEP 3 already localized acceptably.
+- Do not add imagery, emphasis, or transitions.
+- Do not lengthen the text. If this step's output is longer than STEP 3's, something was added that should not have been.
+- Do not undo STEP 2's mechanical normalization: punctuation, ellipses, dashes, numbers, ages, dates, times, imperial
+  measurements, scene-break dinkuses, and <center> markers. Fix them only where they are wrong.
+
+## OUTPUT FORMAT
+Return valid JSON wrapped in <o></o> tags.
+
+<o>
+{
+  "translation": "The verified and repaired text.",
+  "repairs": [
+    {
+      "category": "added_modifier / quotation_mark / dialogue_tag / marker / tb_compliance / character_voice / house_style",
+      "before": "The text as STEP 3 had it.",
+      "after": "The text after repair.",
+      "reason": "One line."
+    }
+  ],
+  "unresolved_flags": [
+    {
+      "type": "tbc_pronoun / missing_tb_term / ambiguous_speaker / banned_language / other",
+      "detail": "What still needs a human decision.",
+      "location": "Short quote or paragraph reference."
+    }
+  ]
+}
+</o>

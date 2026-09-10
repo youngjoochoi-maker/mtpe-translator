@@ -1,9 +1,9 @@
-work: 란가
-lang: zh-ko
+work: 한영
+lang: ko-en
 version: v1
-source_lang: 중국어
-target_lang: 한국어
-notes: ''
+source_lang: 한국어
+target_lang: 영어
+notes: 범용 프롬프트
 steps:
 - id: 1
   name: 1단계
@@ -27,7 +27,7 @@ steps:
   - source
   - glossary
   - step2
-  extract: json:enhanced_translation
+  extract: json:adapted_translation
 - id: 4
   name: 4단계
   file: step4.txt
@@ -35,7 +35,7 @@ steps:
   - source
   - glossary
   - step3
-  extract: json:adapted_translation
+  extract: json:translation
 - id: 5
   name: 5단계
   file: step5.txt

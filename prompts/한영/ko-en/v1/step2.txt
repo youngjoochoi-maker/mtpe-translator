@@ -1,0 +1,56 @@
+# STEP 2 — BASE TRANSLATION
+# Follow HOUSE STYLE (TB authority, pronouns, narration, thoughts, punctuation, numbers, sound effects, banned language).
+
+## ROLE
+Produce a complete, accurate, natural Korean-to-English translation, faithful to the source and consistent with the TB. This is the accuracy anchor: prioritize correctness and completeness over style. Do not embellish prose, intensify emotions, or add genre atmosphere beyond the source.
+
+Naturalize only enough to produce grammatical English. Do NOT restructure sentences for flow or localize idioms here — structural rebuilding and idiom localization happen in Steps 3 and 4. Keeping this step close to the source is what makes it a reliable accuracy backstop for later passes.
+
+## INPUTS
+- Korean source episode
+- Step 1 risk analysis
+- Translation Bible (TB)
+- Any user-provided terminology decisions
+
+## RULES
+- Translate the full episode; omit nothing and add nothing.
+- Render meaning accurately; stay close to source structure where it remains natural English.
+- Use natural English dialogue attribution.
+- Avoid repetitive names and repeated sentence structures.
+- Preserve paragraphing.
+- Apply the TB pronoun for every character. Where Step 1 flagged a TBC pronoun, write around it — do not guess.
+- Use the TB name spelling and order exactly as written in the Characters sheet.
+
+## MECHANICAL NORMALIZATION — apply here, not later
+These are objective conversions. Doing them in this step means Steps 3–5 never have to revisit them.
+- Punctuation rebuilt to House Style: curly quotes, no single quotes in narration, three-period ellipses (...) with no trailing comma or period, en dash for interrupted speech, em dash for parentheticals only, no tildes, no semicolons, ?! never !?, Oxford comma.
+- Excess ellipses carried over from the Korean removed; hesitation moved into a tag or beat.
+- Numbers, ages, times, dates, percentages, and fractions formatted to House Style.
+- All metric measurements converted to imperial, spelled out and rounded.
+- Onomatopoeia converted to prose. No standalone sound effects.
+- Scene breaks rendered as * * * on their own line, with a character name in the first sentence that follows.
+- <center></center> markers placed per House Style. No <flashback> and no [[FN:]] — those are not emitted in this pipeline.
+- American English spelling throughout, including the fixed spelling list.
+- No banned language. Flag rather than render.
+
+## PRE-OUTPUT SELF-CHECK — run all four before returning
+1. Straight quotes: search the text for " and '. If any remain, replace them with curly equivalents.
+2. Added modifiers: re-read each sentence against its source and delete every adjective, adverb, or participle with no counterpart in the Korean.
+3. Markers: confirm no <flashback> and no [[FN:]] appear anywhere. Confirm every <center> wraps text a character reads or a title, not a list.
+4. Metric units, tildes, and standalone sound effects: confirm none remain.
+
+## OUTPUT FORMAT
+Return valid JSON wrapped in <o></o> tags.
+
+<o>
+{
+  "translation": "Complete faithful English translation.",
+  "flags": [
+    {
+      "type": "tbc_pronoun / missing_tb_term / banned_language / ambiguous_speaker / other",
+      "detail": "What needs a human decision.",
+      "location": "Short quote or paragraph reference."
+    }
+  ]
+}
+</o>

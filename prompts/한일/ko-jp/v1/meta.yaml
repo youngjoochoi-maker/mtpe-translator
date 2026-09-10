@@ -1,9 +1,9 @@
-work: 아전가재고대당배방
-lang: zh-ko
+work: 한일
+lang: ko-jp
 version: v1
-source_lang: 중국어
-target_lang: 한국어
-notes: ''
+source_lang: 한국어
+target_lang: 일본어
+notes: 범용 프롬프트
 steps:
 - id: 1
   name: 1단계

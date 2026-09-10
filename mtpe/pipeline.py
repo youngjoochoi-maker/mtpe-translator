@@ -37,6 +37,47 @@ class StageResult:
     cost: float = 0.0      # 예상 비용(USD)
 
 
+def _pick_translation_field(data):
+    """dict 에서 '번역문' 필드를 고른다(없으면 None). 분석용 JSON 은 건드리지 않도록 보수적."""
+    if not isinstance(data, dict):
+        return None
+    if isinstance(data.get("final_translation"), str):
+        return data["final_translation"]
+    for k, v in data.items():
+        if isinstance(v, str) and str(k).lower().endswith("translation"):
+            return v
+    if isinstance(data.get("translation"), str):
+        return data["translation"]
+    return None
+
+
+def _auto_clean(text: str) -> str:
+    """출력 추출 규칙이 없을 때의 안전망.
+    출력이 <o>{JSON}</o> / ```json / JSON 형태이고 번역문 필드가 있으면 그 값만 깔끔히 반환한다
+    (JSON 이스케이프 \n 이 실제 줄바꿈으로 복원됨). 그 외 일반 텍스트는 원문 그대로 통과.
+    → 번들에 추출 규칙이 없어도 JSON 껍데기가 새는 '서식 오류'를 어떤 언어에서든 막는다."""
+    if not text or not text.strip():
+        return text
+    m = re.search(r"<o>(.*?)</o>", text, re.S)
+    inner = (m.group(1) if m else text).strip()
+    cand = inner
+    if cand.startswith("```"):
+        cand = cand.strip("`").strip()
+        if cand[:4].lower() == "json":
+            cand = cand[4:].strip()
+    if cand.startswith("{") and cand.rstrip().endswith("}"):
+        try:
+            data = json.loads(cand)
+            val = _pick_translation_field(data)
+            if isinstance(val, str):
+                return val.strip()
+        except Exception:  # noqa: BLE001
+            pass
+    if m:  # JSON 은 아니지만 <o> 래퍼가 있으면 래퍼만 제거
+        return inner
+    return text
+
+
 def extract_output(text: str, rule: str | None) -> str:
     """extract 규칙 적용.
 
@@ -44,9 +85,10 @@ def extract_output(text: str, rule: str | None) -> str:
     'json:FIELD'→ <o> 안(없으면 전체)에서 JSON 을 파싱해 FIELD 값만 반환
                   (프롬프트가 <o>{JSON}</o> 로 답할 때 특정 필드[번역문]만 깔끔히 추출).
     파싱 실패 시엔 원본을 그대로 반환(모의 모드 등에서도 흐름 유지).
+    규칙이 없으면 _auto_clean 안전망을 거쳐, JSON 껍데기가 새는 서식오류를 자동 방지.
     """
     if not rule:
-        return text
+        return _auto_clean(text)
     if rule.startswith("tag:"):
         tag = rule.split(":", 1)[1].strip()
         m = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.S)
