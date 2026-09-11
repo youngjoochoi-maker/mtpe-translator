@@ -104,6 +104,8 @@ _NOVEL_MARK = "−ノベル版−"  # −ノベル版− (− 는 U+2212)
 _ELLIPSIS_ASCII_RE = re.compile(r'\.{3,}')
 _ELLIPSIS_RUN_RE = re.compile(r'…+')
 _FW_DIGITS = str.maketrans('0123456789', '０１２３４５６７８９')
+_JP_EPNO_LINE_RE = re.compile(r'\d+\.?')          # 본문 맨 앞 원문 화수줄(예: 172.)
+_JP_SCENE_RE = re.compile(r'[\*＊][\s\*＊]*')  # 장면전환 별표만으로 된 줄
 
 
 def _is_jp(lang) -> bool:
@@ -122,10 +124,21 @@ def _norm_ellipsis(s: str) -> str:
     return _ELLIPSIS_RUN_RE.sub(_rep, s)
 
 
+_CLOSE_BRACKETS = "｣」』）\)\]］＞’”"
+_JP_PERIOD_BEFORE_CLOSE_RE = re.compile(r'。(?=[' + _CLOSE_BRACKETS + r'])')
+_JP_SPACE_AFTER_QE_RE = re.compile(r'([？！])[ \u3000]+')
+
+
 def _jp_text_transform(line: str) -> str:
-    """한일 표기: 대사 괄호 전각「」→ 반각 ｢｣, 말줄임표 짝수 정규화."""
+    """한일 표기 규칙 자동 교정:
+    - 대사 괄호 전각「」→ 반각 ｢｣
+    - 말줄임표 짝수(……) 정규화
+    - 닫는 괄호(｣」』) 앞 마침표(。) 제거
+    - 물음표·느낌표(？！) 뒤 공백 제거"""
     line = line.replace("「", "｢").replace("」", "｣")
     line = _norm_ellipsis(line)
+    line = _JP_PERIOD_BEFORE_CLOSE_RE.sub("", line)
+    line = _JP_SPACE_AFTER_QE_RE.sub(r"\1", line)
     return line
 
 
@@ -193,7 +206,15 @@ def _add_doc_paragraphs(doc, text: str, *, lang=None, work=None, episode=None) -
             doc.add_paragraph()  # 제목 블록과 본문 사이 빈 줄
 
     # ── 본문 ──
-    for line in (text or "").split("\n"):
+    lines = (text or "").split("\n")
+    if jp:
+        # 본문 맨 앞에 남은 원문 화수줄(예: "172.")·빈줄 제거 — 第N話가 제목블록에 있음
+        k = 0
+        while k < len(lines) and (not lines[k].strip()
+                                  or _JP_EPNO_LINE_RE.fullmatch(lines[k].strip())):
+            k += 1
+        lines = lines[k:]
+    for line in lines:
         m = _CENTER_LINE_RE.match(line)
         if m:
             para = doc.add_paragraph()
@@ -201,6 +222,13 @@ def _add_doc_paragraphs(doc, text: str, *, lang=None, work=None, episode=None) -
             para.add_run(m.group(1).strip()).bold = True
         else:
             content = _CENTER_TAG_RE.sub("", line)
+            stripped = content.strip()
+            if jp and stripped and _JP_SCENE_RE.fullmatch(stripped):
+                # 장면전환 기호는 형태 불문 "* * *" 가운데정렬로 통일
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                para.add_run("* * *")
+                continue
             if jp:
                 content = _jp_text_transform(content)
             para = doc.add_paragraph(content)
