@@ -249,6 +249,11 @@
       모든 시트가 AI에게 참고로 전달됩니다. 최신 1개만 유지(주차 업데이트 시 교체).</div>
     <div class="hint"><a href="/api/tb-template" download>📄 양식 템플릿 내려받기 (.xlsx)</a> — 헤더·예시가 채워진 파일을 받아 그대로 작성하세요.</div>
     <div id="tbSheets"></div>
+    <div class="tbrow" style="margin-top:12px; flex-wrap:wrap; align-items:center; gap:6px;">
+      <span class="fhelp" style="width:100%;">🇯🇵 <b>일본어 작품 제목</b> — 한일(ko-jp) 워드 상단 제목 블록에 사용합니다 (작품명 · −ノベル版− · 第N話, 볼드·가운데). 회차 번호는 자동. 다른 언어에는 영향 없어요.</span>
+      <input type="text" id="jpTitle" placeholder="예) 病弱令嬢は執着皇太子に溺愛されてます" style="flex:1; min-width:220px;">
+      <button class="sec" id="jpTitleSave" type="button">저장</button>
+    </div>
 
     <h2 style="margin-top:20px;">4. 회차 원문</h2>
     <label>회차 폴더 경로 (선택)</label>
@@ -508,6 +513,7 @@ async function loadLibrary() {
   $("tbName").className = "pill" + (d.tb ? " ok" : "");
   $("tbDel").style.display = d.tb ? "inline-block" : "none";
   renderTbSheets(d.tb);
+  if ($("jpTitle")) $("jpTitle").value = d.jp_title || "";
   $("epCount").textContent = EPISODES.length;
   const box = $("epList");
   if (!EPISODES.length) {
@@ -563,6 +569,14 @@ $("srcDirApply").addEventListener("click", async () => {
   const d = await (await fetch("/api/library/source-dir", { method:"POST", body:fd })).json();
   if (d.ok === false) return alert(d.error || "적용 실패");
   loadLibrary();
+});
+$("jpTitleSave").addEventListener("click", async () => {
+  const fd = new FormData();
+  fd.append("work", $("workSelect").value);
+  fd.append("title", $("jpTitle").value.trim());
+  const d = await (await fetch("/api/library/jp-title", { method:"POST", body:fd })).json();
+  if (d.ok === false) return alert(d.error || "저장 실패");
+  toast("일본어 제목 저장됨 (한일 워드 제목 블록에 적용)");
 });
 $("epUpload").addEventListener("click", async () => {
   const f = $("epFile").files[0];
@@ -662,7 +676,7 @@ async function downloadBatchZip() {
   try {
     const r = await fetch("/api/export-zip", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ work: $("workSelect").value, items, format: "docx" }) });
+      body: JSON.stringify({ work: $("workSelect").value, lang: $("langSelect").value, items, format: "docx" }) });
     const d = await r.json();
     if (d.ok === false) { if (status) status.textContent = ""; if (out) out.innerHTML = `<div class="note">오류: ${d.error}</div>`; return; }
     if (status) status.textContent = `완료 ✓ (${d.count}개 회차)`;
@@ -688,7 +702,7 @@ async function makeDocx(fin, episode) {
   try {
     const r = await fetch("/api/export-docx", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ work: $("workSelect").value, episode, text }) });
+      body: JSON.stringify({ work: $("workSelect").value, lang: $("langSelect").value, episode, text }) });
     const d = await r.json();
     if (d.ok === false) { status.textContent = ""; out.innerHTML = `<div class="note">오류: ${d.error}</div>`; return; }
     status.textContent = "완료 ✓";

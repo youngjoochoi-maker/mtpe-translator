@@ -93,6 +93,139 @@ MODEL_PRESETS = [
 ]
 
 
+# 대소문자·공백 변형까지 허용: <center>, <CENTER>, < center >, </ center > 등
+_CENTER_LINE_RE = re.compile(r'^\s*<\s*center\s*>(.*?)<\s*/\s*center\s*>\s*$', re.S | re.I)
+_CENTER_TAG_RE = re.compile(r'<\s*/?\s*center\s*>', re.I)
+
+
+_JP_BODY_PT = 10          # 가이드: 본문 10pt 통일
+_JP_TITLE_PT = 10        # 가이드: 제목도 10pt 통일(볼드만). 필요 시 이 값만 조정.
+_NOVEL_MARK = "−ノベル版−"  # −ノベル版− (− 는 U+2212)
+_ELLIPSIS_ASCII_RE = re.compile(r'\.{3,}')
+_ELLIPSIS_RUN_RE = re.compile(r'…+')
+_FW_DIGITS = str.maketrans('0123456789', '０１２３４５６７８９')
+
+
+def _is_jp(lang) -> bool:
+    return str(lang or "").lower() in ("ko-jp", "ko-ja", "jp", "ja", "japanese", "일본어")
+
+
+def _norm_ellipsis(s: str) -> str:
+    """말줄임표를 짝수 개(최소 2)로 정규화. …… 유지, … → ……, ……… → …………(4)."""
+    s = s.replace('‥', '…')                       # ‥ → …
+    s = _ELLIPSIS_ASCII_RE.sub(lambda m: '…' * (len(m.group(0)) // 3), s)  # ... → …
+
+    def _rep(m):
+        n = len(m.group(0))
+        n = max(2, n + (n % 2))
+        return '…' * n
+    return _ELLIPSIS_RUN_RE.sub(_rep, s)
+
+
+def _jp_text_transform(line: str) -> str:
+    """한일 표기: 대사 괄호 전각「」→ 반각 ｢｣, 말줄임표 짝수 정규화."""
+    line = line.replace("「", "｢").replace("」", "｣")
+    line = _norm_ellipsis(line)
+    return line
+
+
+def _work_jp_title(work) -> str:
+    """작품별 일본어 제목(라이브러리 설정 jp_title). 없으면 빈 문자열."""
+    try:
+        return (_read_lib_cfg(work) or {}).get("jp_title", "") or ""
+    except Exception:
+        return ""
+
+
+def _ep_number(episode) -> str:
+    m = re.search(r'\d+', str(episode or ""))
+    return m.group(0) if m else ""
+
+
+def _set_run_font(run, name: str, size_pt: float) -> None:
+    """런의 글꼴을 (동아시아 문자 포함) 지정."""
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+    run.font.name = name
+    run.font.size = Pt(size_pt)
+    rpr = run._element.get_or_add_rPr()
+    rfonts = rpr.find(qn('w:rFonts'))
+    if rfonts is None:
+        rfonts = rpr.makeelement(qn('w:rFonts'), {})
+        rpr.insert(0, rfonts)
+    for attr in ('w:ascii', 'w:hAnsi', 'w:eastAsia', 'w:cs'):
+        rfonts.set(qn(attr), name)
+
+
+def _add_doc_paragraphs(doc, text: str, *, lang=None, work=None, episode=None) -> None:
+    """번역문을 docx 문단으로 추가.
+    - 공통: <center>…</center> 줄 → 태그 제거 + 가운데 정렬 + 볼드.
+    - 한일(ko-jp): 가이드 서식 반영.
+      · 상단 제목 블록(작품명[크게·볼드] / −ノベル版−[볼드] / 第N話[볼드, 한자릿수 전각]) 가운데.
+      · 본문 양쪽정렬, 대사 ｢｣·말줄임표 …… 변환.
+      · 끝에 본문 2줄 띄우고 「つづく」 우측정렬 + 1줄.
+      · 폰트 Yu Gothic, 본문 10pt, 줄간격 1.15, 단락 뒤 공백 0."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt
+    jp = _is_jp(lang)
+
+    # ── 한일 제목 블록 ──
+    if jp:
+        jp_title = _work_jp_title(work)
+        if jp_title:
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = para.add_run(jp_title); r.bold = True
+            _set_run_font(r, "Yu Gothic", _JP_TITLE_PT)      # 제목만 크게
+
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = para.add_run(_NOVEL_MARK); r.bold = True
+            _set_run_font(r, "Yu Gothic", _JP_BODY_PT)
+
+            epno = _ep_number(episode)
+            if epno:
+                disp = epno.translate(_FW_DIGITS) if len(epno) == 1 else epno  # 한 자릿수 전각
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                r = para.add_run(f"第{disp}話"); r.bold = True
+                _set_run_font(r, "Yu Gothic", _JP_BODY_PT)
+            doc.add_paragraph()  # 제목 블록과 본문 사이 빈 줄
+
+    # ── 본문 ──
+    for line in (text or "").split("\n"):
+        m = _CENTER_LINE_RE.match(line)
+        if m:
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            para.add_run(m.group(1).strip()).bold = True
+        else:
+            content = _CENTER_TAG_RE.sub("", line)
+            if jp:
+                content = _jp_text_transform(content)
+            para = doc.add_paragraph(content)
+            if jp:
+                para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+
+    # ── 한일: 끝맺음(つづく) + 폰트/단락 서식 일괄 ──
+    if jp:
+        doc.add_paragraph()
+        doc.add_paragraph()               # 본문에서 2줄 띄움
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        para.add_run("つづく")
+        doc.add_paragraph()               # 아래 1줄
+        for para in doc.paragraphs:
+            pf = para.paragraph_format
+            pf.line_spacing = 1.15
+            pf.space_after = Pt(0)
+            for run in para.runs:
+                if run.font.size is None:     # 이미 지정된(제목 등) 건 유지
+                    _set_run_font(run, "Yu Gothic", _JP_BODY_PT)
+                elif run.font.name != "Yu Gothic":
+                    _set_run_font(run, "Yu Gothic", run.font.size.pt)
+
+
 def _load_config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
@@ -556,6 +689,7 @@ def library(work: str) -> JSONResponse:
     return JSONResponse({
         "work": work,
         "source_dir": _read_lib_cfg(work).get("source_dir", ""),
+        "jp_title": _read_lib_cfg(work).get("jp_title", ""),
         "episodes": _list_episodes(work),
         "tb": tb_info,
     })
@@ -588,6 +722,19 @@ def set_source_dir(work: str = Form(...), path: str = Form("")) -> JSONResponse:
     cfg["source_dir"] = path
     _write_lib_cfg(work, cfg)
     return JSONResponse({"ok": True, "episodes": _list_episodes(work)})
+
+
+@app.post("/api/library/jp-title")
+def set_jp_title(work: str = Form(...), title: str = Form("")) -> JSONResponse:
+    """한일(ko-jp) 제목 블록에 쓸 '일본어 작품 제목'을 작품별로 저장."""
+    try:
+        _safe_seg(work)
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    cfg = _read_lib_cfg(work)
+    cfg["jp_title"] = title.strip()
+    _write_lib_cfg(work, cfg)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/library/episode")
@@ -794,8 +941,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                 try:
                     import docx as _docx
                     _d = _docx.Document()
-                    for _line in pipe.final_output.split("\n"):
-                        _d.add_paragraph(_line)
+                    _add_doc_paragraphs(_d, pipe.final_output, lang=lang, work=work, episode=eid)
                     _d.save(str(outd / doc_name))
                     saved_docs.append((Path(eid).stem, doc_name, str(outd / doc_name)))
                 except Exception:
@@ -1184,8 +1330,7 @@ def export_docx(payload: dict = Body(...)) -> JSONResponse:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     out_dir.mkdir(parents=True, exist_ok=True)
     doc = docx.Document()
-    for line in text.split("\n"):
-        doc.add_paragraph(line)
+    _add_doc_paragraphs(doc, text, lang=payload.get("lang"), work=work, episode=stem)
     doc.save(str(out_dir / fname))
     return JSONResponse({"ok": True, "filename": fname, "dir": str(out_dir),
         "url": f"/api/export-docx-download?work={quote(work)}&episode={quote(stem)}&name={quote(fname)}"})
@@ -1240,8 +1385,7 @@ def export_zip(payload: dict = Body(...)) -> JSONResponse:
                 zf.writestr(member + ".txt", text)
             else:
                 doc = docx.Document()
-                for line in text.split("\n"):
-                    doc.add_paragraph(line)
+                _add_doc_paragraphs(doc, text, lang=payload.get("lang"), work=work, episode=it.get("episode"))
                 bio = _io.BytesIO()
                 doc.save(bio)
                 zf.writestr(member + ".docx", bio.getvalue())
