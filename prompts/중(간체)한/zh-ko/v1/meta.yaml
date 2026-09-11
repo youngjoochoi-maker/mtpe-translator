@@ -5,7 +5,7 @@ release_version: v0.1        # 제품 릴리스 명칭 (QC/QA 전, 배포 예정
 release_status: QC/QA 전
 source_lang: 중국어(간체)
 target_lang: 한국어
-notes: 범용 프롬프트 v1
+notes: 범용 프롬프트
 steps:
 - id: 1
   name: 1단계
