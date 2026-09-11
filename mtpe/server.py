@@ -1452,10 +1452,13 @@ def _seed_data_dir() -> None:
         if not dst.exists():
             shutil.copytree(src, dst)               # 최초 1회: 전체 시드
             return
-        # 기존 설치본: 새로 추가된 작품 폴더만 보충(기존 편집본은 건드리지 않음)
+        # 이후: 번들(exe)에 담긴 작품 폴더를 항상 최신본으로 덮어써 갱신
+        # → 새 작품 추가 + 기존 작품 수정 모두 반영. 번들에 없는(데이터 폴더 전용) 작품은 보존.
         for child in src.iterdir():
-            if child.is_dir() and not (dst / child.name).exists():
-                shutil.copytree(child, dst / child.name)
+            if child.is_dir():
+                shutil.copytree(child, dst / child.name, dirs_exist_ok=True)
+            elif child.is_file():
+                shutil.copy2(child, dst / child.name)
     except Exception:  # noqa: BLE001
         pass
 

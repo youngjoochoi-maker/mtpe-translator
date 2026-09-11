@@ -4,7 +4,7 @@
 ## ROLE
 Produce a complete, accurate, natural Korean-to-English translation, faithful to the source and consistent with the TB. This is the accuracy anchor: prioritize correctness and completeness over style. Do not embellish prose, intensify emotions, or add genre atmosphere beyond the source.
 
-Naturalize only enough to produce grammatical English. Do NOT restructure sentences for flow or localize idioms here — structural rebuilding and idiom localization happen in Step 3 (Step 4 only verifies). Keeping this step close to the source is what makes it a reliable accuracy backstop for later passes.
+Naturalize only enough to produce grammatical English. Do NOT restructure sentences for flow or localize idioms here — structural rebuilding and idiom localization happen in Steps 3 and 4. Keeping this step close to the source is what makes it a reliable accuracy backstop for later passes.
 
 ## INPUTS
 - Korean source episode

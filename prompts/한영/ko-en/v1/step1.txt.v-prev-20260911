@@ -1,7 +1,6 @@
 # HOUSE STYLE — SHARED RULES
 # Applies to Steps 2, 3, 4, and 5. Reference this block; do not restate these rules inside the individual steps.
 # Authority: KR 「보이스루 한영 웹소설 가이드」 first; the English Web Novel Editing Guidelines (V1.1) for anything it does not cover.
-# Exception (PM decision): sound effects follow the English guide — no sound effects in narration. See SOUND & ONOMATOPOEIA.
 #
 # V1.9 CHANGES (from V1.8)
 #  1. <flashback> and [[FN:]] markers removed. Flashbacks are plain narration; footnotes are decided at post-editing.
@@ -16,15 +15,8 @@
 #  1. Ellipses flipped to three periods (...). The … character is now forbidden. Spacing and terminal-punctuation rules added.
 #  2. Interrupted speech flipped from em dash to en dash. Em dash is now parentheticals only.
 #  3. Numbers: one through one hundred are spelled out everywhere, dialogue included.
-#  4. Standalone sound effects are now italicized rather than banned outright. [REVERSED in V2.1 — see V2.1 change 1]
+#  4. Standalone sound effects are now italicized rather than banned outright.
 #  5. Added from the KR guide: ?! order, no semicolons, comma-splice ban, that/which, quote-in-quote punctuation, stuttering hyphens, Standard American English.
-#
-# V2.1 CHANGES (from V2.0) — consistency fixes only
-#  1. Sound effects: V2.0 change 4 reversed by PM decision. No sound effects in narration, italicized or not (English guide: NEVER USE SOUND EFFECTS in narration). House Style now matches Steps 2, 4, and 5.
-#  2. Step 3 dialogue example corrected to an en dash for interrupted speech.
-#  3. SPECIAL TEXT MARKERS wording fixed: <i></i> (THOUGHTS) and <center></center> are the only two markers; <center> is the only special-text marker.
-#  4. Step 2 note corrected: structural rebuilding and idiom localization happen in Step 3 only.
-#  5. Step 4 header corrected: the verification-pass conversion dates from V1.9.
 
 ## TRANSLATION BIBLE (TB) AUTHORITY
 - The TB is the single source of truth.
@@ -117,15 +109,14 @@
 - Currency: follow the TB / project decision. Do not convert on your own initiative.
 
 ## SOUND & ONOMATOPOEIA
-- NEVER USE SOUND EFFECTS in narration. [English guide, PM decision — overrides the KR guide on this point]
-- Fold every onomatopoeia into a sentence that describes the sound. This applies to standalone sound effects too: do not keep them, and do not italicize them as a way of keeping them.
+- Prefer prose: fold onomatopoeia into a sentence that describes the sound.
   * 쾅! 차량이 구급차를 후려쳤다 → Metal shrieked as the sedan slammed into the ambulance.
   * 사락, 사락 → The rustle of pages being turned was the only sound in the room.
-  * 우르르, 쾅! → A sudden boom of thunder rolled overhead.   ("BOOM, CRASH!" ✗  "Boom!" ✗)
+- Where a standalone sound effect is kept — one not produced by a character's mouth — italicize it. [KR guide]  Boom! · Splat! · Clap clap.
 - In intimate scenes, "ngh, mmm, ah, ahh" may appear sparingly inside dialogue only; italicize "ngh" and nothing else. Otherwise fold the sound into narration.
 
 ## SPECIAL TEXT MARKERS
-- This pipeline emits exactly two markers: <i></i> (direct thoughts, imagined dialogue, and first-appearance romanized Korean — see THOUGHTS and below) and <center></center>. <center> is the only special-text marker. Both are handoffs to the human editor, not final formatting.
+- <center></center> is the ONLY marker this pipeline emits. It is a handoff to the human editor, not final formatting.
 - Emit <center></center> for: text a character physically reads — signage, door plates, shop fronts, notes, letters, screens, messages, comments, nameplates, posted notices — and for chapter titles, part titles, arc headings, loglines, and synopsis headings.
 - Do NOT emit <center> for a list, an enumeration, or narration that merely resembles a list. A run-on catalogue of items inside a sentence is narration, not signage.
 - Do NOT emit <flashback></flashback>. Flashbacks are written as ordinary narration with no wrapper of any kind. Signal the shift through tense and context, exactly as the source does. Emitting a flashback tag is an error.

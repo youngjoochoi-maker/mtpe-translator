@@ -2,7 +2,7 @@
 # Follow HOUSE STYLE.
 # INPUT: the STEP 3 adaptation.
 #
-# CHANGED IN V1.9 (kept in V2.0 and V2.1) — in V1.7 and V1.8 this file repeated STEP 3 almost word for word, so the pipeline ran the same
+# CHANGED IN V2.0 — in V1.7 and V1.8 this file repeated STEP 3 almost word for word, so the pipeline ran the same
 # adaptation twice and the second pass drifted further from the source without adding value. This step is now a
 # checking pass. It does not re-adapt. It finds and repairs the specific failures that recurred across all four
 # evaluated works, and leaves everything else untouched.
