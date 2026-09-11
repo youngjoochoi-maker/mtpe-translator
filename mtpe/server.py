@@ -1436,16 +1436,26 @@ def export_zip_download(work: str, name: str):
 
 @app.on_event("startup")
 def _seed_data_dir() -> None:
-    """데이터 폴더가 리소스와 다르면(서버 배포·패키징) 비어있을 때 기본 프롬프트를 시드."""
+    """데이터 폴더가 리소스와 다르면(서버 배포·패키징) 기본 프롬프트를 시드.
+    - 최초 실행: prompts 전체를 복사.
+    - 이후 실행: dst 에 '없는 작품 폴더만' 추가 복사(기존/사용자 편집본은 그대로 보존).
+      → 새 버전 exe 에 새로 담긴 작품(예: 중한)이 기존 설치본에도 자동 반영됨."""
     if DATA_ROOT == RESOURCE_ROOT:
         return
     src = RESOURCE_ROOT / "prompts"
     dst = DATA_ROOT / "prompts"
     try:
         DATA_ROOT.mkdir(parents=True, exist_ok=True)
-        if src.exists() and not dst.exists():
-            shutil.copytree(src, dst)
         (DATA_ROOT / "works").mkdir(parents=True, exist_ok=True)
+        if not src.exists():
+            return
+        if not dst.exists():
+            shutil.copytree(src, dst)               # 최초 1회: 전체 시드
+            return
+        # 기존 설치본: 새로 추가된 작품 폴더만 보충(기존 편집본은 건드리지 않음)
+        for child in src.iterdir():
+            if child.is_dir() and not (dst / child.name).exists():
+                shutil.copytree(child, dst / child.name)
     except Exception:  # noqa: BLE001
         pass
 
