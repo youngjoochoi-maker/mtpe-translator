@@ -52,7 +52,7 @@ TEMPLATES: dict[str, dict] = {
         "qcheck_col_mt": "C",
         "qcheck_clear_cols": ["D", "E", "F", "G"],  # 평가자 입력칸(H/I/J=일치는 보존)
     },
-    "ko-ja": {
+    "ko-jp": {
         "file": "한일_v2.xlsx",
         # ③ 평가 입력 (한일: 사람번역 C, MT D, 검수 E, 카테고리 F~R 13개)
         "input_sheet": "③ 평가 입력",

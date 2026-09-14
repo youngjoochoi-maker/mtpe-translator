@@ -1255,6 +1255,8 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
 
     work = payload.get("work")
     lang = (payload.get("lang") or "").lower()   # ko-EN 등 들어와도 ko-en 으로 매칭
+    if lang == "ko-ja":
+        lang = "ko-jp"   # 구표기 호환: 한일은 jp로 통일
     version = (payload.get("version") or "v1").lower()
     episode = payload.get("episode")
     mode = payload.get("output_mode", "single")
@@ -1264,7 +1266,7 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "작품/회차가 필요합니다."}, status_code=400)
     if lang not in TEMPLATES:
         return JSONResponse({"ok": False,
-            "error": f"'{lang}' 언어쌍은 평가표 템플릿이 없습니다. (한일 ko-ja / 한영 ko-en 만 지원)"},
+            "error": f"'{lang}' 언어쌍은 평가표 템플릿이 없습니다. (한일 ko-jp / 한영 ko-en 만 지원)"},
             status_code=400)
 
     ep_path = _episode_path(work, episode)
