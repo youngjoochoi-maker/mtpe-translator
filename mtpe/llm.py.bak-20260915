@@ -49,7 +49,7 @@ def call_llm(
             )
         ]
 
-    response = _completion_with_fallback(kwargs)
+    response = completion(**kwargs)
     choice = response.choices[0]
     content = (choice.message.content or "").strip()
     if not content:
@@ -61,49 +61,3 @@ def call_llm(
             "max_tokens 를 늘리거나 회차를 나눠 다시 시도해 보세요."
         )
     return content
-
-
-def _model_max_output(model: str) -> int | None:
-    """LiteLLM 모델 정보에서 출력 토큰 상한을 조회(모르면 None)."""
-    try:
-        import litellm
-        info = litellm.get_model_info(model)
-        v = info.get("max_output_tokens") or info.get("max_tokens")
-        return int(v) if v else None
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _completion_with_fallback(kwargs: dict):
-    """모델별 파라미터 제약을 자동 흡수하며 호출한다.
-
-    - 모델이 지원하지 않는 파라미터(예: Claude Opus 4.8 의 temperature≠1)는 버림(drop_params).
-    - max_tokens 가 모델 상한보다 크면 상한으로 낮춤. 그래도 거부되면 오류 메시지의 상한값으로 1회 재시도.
-    """
-    import re
-    import litellm
-    from litellm import completion
-
-    litellm.drop_params = True  # 지원하지 않는 파라미터는 조용히 제거
-
-    cap = _model_max_output(kwargs["model"])
-    if cap and kwargs.get("max_tokens") and kwargs["max_tokens"] > cap:
-        kwargs["max_tokens"] = cap
-
-    try:
-        return completion(**kwargs)
-    except Exception as exc:  # noqa: BLE001
-        msg = str(exc)
-        # 1) temperature 등 파라미터 거부 → 해당 파라미터 빼고 재시도
-        if "temperature" in msg and ("does not support" in msg or "Only temperature" in msg):
-            kwargs.pop("temperature", None)
-            return completion(**kwargs)
-        # 2) max_tokens 상한 초과 → 메시지의 상한값으로 재시도
-        m = re.search(r"supports at most (\d+) (?:completion|output) tokens", msg) \
-            or re.search(r"max_tokens.*?(\d{4,6})", msg)
-        if m and "max_tokens" in kwargs:
-            limit = int(m.group(1))
-            if limit < kwargs["max_tokens"]:
-                kwargs["max_tokens"] = limit
-                return completion(**kwargs)
-        raise
