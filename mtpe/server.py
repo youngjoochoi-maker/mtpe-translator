@@ -81,15 +81,19 @@ PROVIDER_KEYS = {
 # UI 모델 프리셋 (사용자가 직접 입력도 가능)
 MODEL_PRESETS = [
     {"label": "🧪 키 없이 테스트 (모의 응답)", "model": "mock"},
-    {"label": "Claude Opus 4.8", "model": "claude-opus-4-8"},
-    {"label": "Claude Sonnet 4.6", "model": "claude-sonnet-4-6"},
-    {"label": "Claude Haiku 4.5", "model": "claude-haiku-4-5-20251001"},
-    {"label": "OpenAI GPT-4o", "model": "gpt-4o"},
-    {"label": "OpenAI o3", "model": "o3"},
-    {"label": "Gemini 3.6 Flash", "model": "gemini/gemini-3.6-flash"},
-    {"label": "Gemini 2.5 Flash", "model": "gemini/gemini-2.5-flash"},
+    # Google — 기본값. 안전필터 해제 적용, 웹소설 번역에 가장 안정적
+    {"label": "Gemini 3.1 Pro (기본)", "model": "gemini/gemini-3.1-pro-preview"},
     {"label": "Gemini 2.5 Pro", "model": "gemini/gemini-2.5-pro"},
-    {"label": "Gemini 3.1 Pro", "model": "gemini/gemini-3.1-pro-preview"},
+    {"label": "Gemini 3.8 Flash (빠름·저렴)", "model": "gemini/gemini-3.8-flash"},
+    {"label": "Gemini 2.5 Flash (빠름·저렴)", "model": "gemini/gemini-2.5-flash"},
+    # Anthropic — 최신 세대
+    {"label": "Claude Opus 5", "model": "claude-opus-5"},
+    {"label": "Claude Sonnet 5", "model": "claude-sonnet-5"},
+    {"label": "Claude Haiku 4.5 (빠름·저렴)", "model": "claude-haiku-4-5-20251001"},
+    # OpenAI — 최신 세대 (GPT-4o는 웹소설 거부 잦음·o3는 종료 예정이라 제외)
+    {"label": "OpenAI GPT-5.6", "model": "gpt-5.6"},
+    {"label": "OpenAI GPT-5.6 Terra (중간)", "model": "gpt-5.6-terra"},
+    {"label": "OpenAI GPT-4.1", "model": "gpt-4.1"},
 ]
 
 

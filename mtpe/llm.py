@@ -7,6 +7,26 @@ class EmptyResponseError(RuntimeError):
     """모델이 빈 응답을 반환(토큰 한도 초과·안전필터 차단 등). 파이프라인이 직전 결과로 대체."""
 
 
+class ModelRefusalError(RuntimeError):
+    """모델이 요청 자체를 거부(안전 필터). 거부 문장을 결과로 흘려보내지 않고 회차를 중단한다."""
+
+
+import re as _re
+_REFUSAL_RE = _re.compile(
+    r"^\s*(I'm sorry|I am sorry|Sorry)[,.]?\s*(but\s+)?I (can't|cannot|can not|won't|am unable to)\s+(assist|help|comply|provide|fulfill|do that)"
+    r"|^\s*I (can't|cannot) (assist|help) with (that|this)"
+    r"|^\s*(죄송하지만|죄송합니다)[,.]?\s*(이|해당|그)?\s*요청(은|을)?\s*(도와드릴 수 없|처리할 수 없|수행할 수 없)"
+    r"|^\s*申し訳ありません(が)?[、,]?\s*(この|その)?リクエスト(に|は)(お応え|対応)(でき|いたしかね)",
+    _re.I,
+)
+
+
+def looks_like_refusal(text: str) -> bool:
+    """짧은 응답이 정형화된 거부 문구로 시작하면 True."""
+    t = (text or "").strip()
+    return bool(t) and len(t) < 400 and bool(_REFUSAL_RE.search(t))
+
+
 def call_llm(
     model: str,
     system_prompt: str,
@@ -52,6 +72,12 @@ def call_llm(
     response = _completion_with_fallback(kwargs)
     choice = response.choices[0]
     content = (choice.message.content or "").strip()
+    if looks_like_refusal(content):
+        raise ModelRefusalError(
+            f"모델({model})이 요청을 거부했습니다(안전 필터): “{content[:80]}”\n"
+            "웹소설의 폭력·선정 묘사 등에 반응한 것으로, 이 모델로는 이 회차를 번역하기 어렵습니다. "
+            "다른 모델(Gemini 3.1 Pro / Claude / GPT-4.1·GPT-5 등)로 바꿔 다시 실행해 주세요."
+        )
     if not content:
         # 빈 응답이면 이유를 알려준다(토큰 한도 초과 / 안전필터 차단 등). 호출측(파이프라인)이 처리.
         fr = getattr(choice, "finish_reason", None) or "unknown"
