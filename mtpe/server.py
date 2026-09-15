@@ -1328,6 +1328,21 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
                          "dir": str(out_dir)})
 
 
+@app.get("/api/log")
+def api_log(since: int = 0):
+    """앱 콘솔용 통신 로그(증분). since 이후의 줄만 반환."""
+    from .logbuf import since as _since
+    seq, lines = _since(int(since or 0))
+    return JSONResponse({"seq": seq, "lines": lines})
+
+
+@app.post("/api/log/clear")
+def api_log_clear():
+    from .logbuf import clear
+    clear()
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/eval-download")
 def eval_download(work: str, episode: str, name: str):
     """생성된 평가표 파일 다운로드."""

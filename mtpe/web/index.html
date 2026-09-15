@@ -167,6 +167,10 @@
   .epblock .ephead .epname { font-weight:700; }
   .epblock .ephead .epstat { margin-left:auto; font-size:12px; color:var(--mut); }
   .epbody { padding:12px; }
+  .consolebox { margin-top:14px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; }
+  .consolebox summary { cursor:pointer; font-weight:600; font-size:13px; }
+  .consolelog { margin:8px 0 2px; max-height:260px; overflow:auto; font-size:12px; line-height:1.5;
+    white-space:pre-wrap; word-break:break-all; background:var(--bg); color:var(--fg); padding:8px; border-radius:6px; }
   .evalbox { border-top:1px solid var(--line); margin-top:10px; padding-top:8px; }
   .evalbox select { width:auto; }
   .ev-result { margin-top:8px; }
@@ -281,6 +285,11 @@
   <section class="panel" id="results">
     <h2>진행 상황</h2>
     <div id="episodes"><div class="hint">왼쪽에서 회차를 선택하고 [번역]을 누르세요.</div></div>
+    <details id="consoleBox" class="consolebox">
+      <summary>🖥 콘솔 (통신 로그) <span id="consoleCount" class="fhelp"></span>
+        <button type="button" class="linkbtn" id="consoleClear" style="margin-left:8px;">지우기</button></summary>
+      <pre id="consoleLog" class="consolelog">(실행하면 요청·응답 로그가 여기에 쌓입니다)</pre>
+    </details>
   </section>
 </main>
 <div id="toast"></div>
@@ -767,6 +776,31 @@ $("estBtn").addEventListener("click", async () => {
       + `<br><span class="fhelp">※ 러프한 추정이에요${d.tb_used ? " (설정집이 매 단계 함께 전송돼 토큰·비용이 커집니다)" : ""}. 실제 값은 실행하면 정확히 표시됩니다.</span>`;
   } catch(e) { $("estInfo").textContent = "예상 요청 실패: " + e.message; }
 });
+/* ===== 콘솔(통신 로그) ===== */
+let _logSeq = 0, _logTimer = null;
+async function pollLog() {
+  try {
+    const r = await fetch("/api/log?since=" + _logSeq);
+    const d = await r.json();
+    if (d.lines && d.lines.length) {
+      const pre = $("consoleLog");
+      if (pre.textContent.startsWith("(실행하면")) pre.textContent = "";
+      pre.textContent += d.lines.join("\n") + "\n";
+      pre.scrollTop = pre.scrollHeight;
+      $("consoleCount").textContent = `· 최근 ${d.lines[d.lines.length-1].slice(1,9)}`;
+    }
+    _logSeq = d.seq || _logSeq;
+  } catch (e) { /* 무시 */ }
+}
+function startLogPolling() { pollLog(); if (!_logTimer) _logTimer = setInterval(pollLog, 1000); }
+function stopLogPolling() { setTimeout(() => { pollLog(); if (_logTimer) { clearInterval(_logTimer); _logTimer = null; } }, 1500); }
+$("consoleClear").addEventListener("click", async (e) => {
+  e.preventDefault(); e.stopPropagation();
+  try { await fetch("/api/log/clear", { method: "POST" }); } catch (e2) {}
+  $("consoleLog").textContent = ""; $("consoleCount").textContent = "";
+});
+pollLog();
+
 $("runBtn").addEventListener("click", async () => {
   const eids = [...document.querySelectorAll("#epList .epchk:checked")].map(c => c.value);
   if (!eids.length) return alert("번역할 회차를 선택하세요.");
@@ -785,6 +819,7 @@ $("runBtn").addEventListener("click", async () => {
   }
   $("runBtn").disabled = true; $("runBtn").textContent = "번역 중…";
   $("episodes").innerHTML = "";
+  $("consoleBox").open = true; startLogPolling();
 
   const body = JSON.stringify({
     work: $("workSelect").value, lang: $("langSelect").value,
@@ -808,6 +843,7 @@ $("runBtn").addEventListener("click", async () => {
     alert("요청 실패: " + e.message);
   } finally {
     $("runBtn").disabled = false; $("runBtn").innerHTML = `▶ 선택 회차 번역 (<span id="runCount">${eids.length}</span>)`;
+    stopLogPolling();
   }
 });
 
@@ -1201,6 +1237,7 @@ async function populateTuneEpisodes() {
 function cardByStepId(id) { return document.querySelectorAll('#mSteps .mstep')[id - 1]; }
 
 async function runTune(fromStep = 0) {
+  startLogPolling();
   if (!mState.work) return alert("먼저 프롬프트 세트를 불러오거나 새로 만드세요.");
   const episode = $("tuneEpisode").value;
   if (!episode) return alert("샘플 회차를 선택하세요. (번역 탭에서 회차를 업로드/폴더지정)");

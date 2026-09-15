@@ -69,10 +69,23 @@ def call_llm(
             )
         ]
 
-    response = _completion_with_fallback(kwargs)
+    from .logbuf import log as _log
+    import time as _time
+    _n_in = len(system_prompt or "") + len(user_prompt or "")
+    _log(f"▶ 요청  {model} · 입력 약 {_n_in:,}자 · max_tokens {kwargs.get('max_tokens')}"
+         + (f" · temp {kwargs['temperature']}" if 'temperature' in kwargs else ""))
+    _t0 = _time.time()
+    try:
+        response = _completion_with_fallback(kwargs)
+    except Exception as exc:  # noqa: BLE001
+        _log(f"✖ 오류  {model} · {_time.time()-_t0:.1f}초 · {str(exc)[:200]}")
+        raise
     choice = response.choices[0]
     content = (choice.message.content or "").strip()
+    _fr = getattr(choice, "finish_reason", None) or "?"
+    _log(f"◀ 응답  {model} · {_time.time()-_t0:.1f}초 · 출력 {len(content):,}자 · finish={_fr}")
     if looks_like_refusal(content):
+        _log(f"✖ 거부  {model} · 모델이 요청을 거부(안전 필터)")
         raise ModelRefusalError(
             f"모델({model})이 요청을 거부했습니다(안전 필터): “{content[:80]}”\n"
             "웹소설의 폭력·선정 묘사 등에 반응한 것으로, 이 모델로는 이 회차를 번역하기 어렵습니다. "
@@ -122,6 +135,8 @@ def _completion_with_fallback(kwargs: dict):
         msg = str(exc)
         # 1) temperature 등 파라미터 거부 → 해당 파라미터 빼고 재시도
         if "temperature" in msg and ("does not support" in msg or "Only temperature" in msg):
+            from .logbuf import log as _log
+            _log(f"⚠ 재시도  {kwargs['model']} · temperature 미지원 → 제거 후 재요청")
             kwargs.pop("temperature", None)
             return completion(**kwargs)
         # 2) max_tokens 상한 초과 → 메시지의 상한값으로 재시도
@@ -130,6 +145,8 @@ def _completion_with_fallback(kwargs: dict):
         if m and "max_tokens" in kwargs:
             limit = int(m.group(1))
             if limit < kwargs["max_tokens"]:
+                from .logbuf import log as _log
+                _log(f"⚠ 재시도  {kwargs['model']} · max_tokens 상한 초과 → {limit}로 낮춰 재요청")
                 kwargs["max_tokens"] = limit
                 return completion(**kwargs)
         raise
