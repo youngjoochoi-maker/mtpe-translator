@@ -85,19 +85,12 @@ class _DesktopApi:
         if sys.platform == "darwin":
             cmds = [["pbcopy"]]
         elif sys.platform.startswith("win"):
-            # clip.exe 는 콘솔 코드페이지(CP949)로 읽어 곡선따옴표 등이 깨짐 → PowerShell 로 UTF-8 그대로 넣는다
-            import base64
-            b64 = base64.b64encode((content or "").encode("utf-16-le")).decode("ascii")
-            ps = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
-                  f"$t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{b64}'));"
-                  "Set-Clipboard -Value $t")
-            cmds = [["powershell", "-NoProfile", "-Command", ps]]
+            cmds = [["clip"]]
         else:
             cmds = [["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]]
         for cmd in cmds:
             try:
-                env = dict(os.environ, LANG="en_US.UTF-8", LC_ALL="en_US.UTF-8")  # pbcopy 한글/일어 깨짐 방지
-                p = subprocess.run(cmd, input=data, env=env)
+                p = subprocess.run(cmd, input=data)
                 if p.returncode == 0:
                     return {"ok": True}
             except Exception:  # noqa: BLE001

@@ -76,7 +76,7 @@ def call_llm(
          + (f" · temp {kwargs['temperature']}" if 'temperature' in kwargs else ""))
     _t0 = _time.time()
     try:
-        response = _completion_with_fallback(kwargs)
+        response = _completion_with_retry(kwargs)
     except Exception as exc:  # noqa: BLE001
         _log(f"✖ 오류  {model} · {_time.time()-_t0:.1f}초 · {str(exc)[:200]}")
         raise
@@ -111,6 +111,47 @@ def _model_max_output(model: str) -> int | None:
         return int(v) if v else None
     except Exception:  # noqa: BLE001
         return None
+
+
+# 일시 오류(분당 한도 429 / 서버 과부하 503·529 / 연결 끊김) 재시도 설정.
+# 여러 회차를 동시에 돌리면 429 가 가장 흔한 실패 원인이라, 기다렸다 다시 보낸다.
+RETRY_MAX = 6                      # 최대 재시도 횟수
+RETRY_WAITS = (5, 10, 20, 40, 60, 90)  # 회차별 대기(초). 여기에 0~30% 무작위 가산
+
+
+def _is_transient(exc: Exception) -> bool:
+    name = type(exc).__name__
+    if name in ("RateLimitError", "ServiceUnavailableError", "InternalServerError",
+                "APIConnectionError", "Timeout", "APITimeoutError"):
+        return True
+    code = getattr(exc, "status_code", None)
+    if code in (408, 429, 500, 502, 503, 504, 529):
+        return True
+    msg = str(exc).lower()
+    return any(k in msg for k in ("rate limit", "rate_limit", "429", "quota", "overloaded",
+                                  "resource has been exhausted", "resource_exhausted",
+                                  "503", "529", "temporarily unavailable"))
+
+
+def _completion_with_retry(kwargs: dict):
+    """일시 오류면 대기 후 재시도(최대 RETRY_MAX 회). 그 외 오류는 즉시 전달."""
+    import random
+    import time as _t
+    from .logbuf import log as _log
+
+    attempt = 0
+    while True:
+        try:
+            return _completion_with_fallback(dict(kwargs))
+        except Exception as exc:  # noqa: BLE001
+            if attempt >= RETRY_MAX or not _is_transient(exc):
+                raise
+            base = RETRY_WAITS[min(attempt, len(RETRY_WAITS) - 1)]
+            wait = base * (1 + random.random() * 0.3)
+            attempt += 1
+            _log(f"⏳ 대기  {kwargs['model']} · 일시 오류({type(exc).__name__}) → "
+                 f"{wait:.0f}초 후 재시도 {attempt}/{RETRY_MAX} · {str(exc)[:120]}")
+            _t.sleep(wait)
 
 
 def _completion_with_fallback(kwargs: dict):

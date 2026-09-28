@@ -175,7 +175,9 @@ def estimate_pipeline_usage(pipe, source: str, glossary: str, model: str):
             step_in += hs_t
         for key in step.inputs:
             step_in += art.get(key, 0)
-        step_out = int(src_t * 1.15)  # 각 단계 출력 ≈ 원문 길이(+JSON 래핑 여유)
+        # 각 단계 출력 ≈ 원문의 0.7배 (QA 실측 2026-09: 5단계 합산 출력이 원문×5의 약 35~40% —
+        # 분석 단계는 짧고, 번역 단계도 원문보다 약간 짧게 나옴)
+        step_out = int(src_t * 0.7)
         in_total += step_in
         out_total += step_out
         art[f"step{step.id}"] = step_out
@@ -331,6 +333,11 @@ class Pipeline:
                 )
                 output = extract_output(raw, step.extract)
                 err = ""
+                # 마지막 단계가 번역문 대신 '분석/검사 결과'를 내놓은 경우 → 직전 정상 결과로 대체
+                if step.is_final and last_nonempty and _looks_like_analysis(output):
+                    err = ("마지막 단계가 번역문 대신 분석 결과를 반환해, 직전 단계 번역문을 최종본으로 사용했습니다. "
+                           "(이 단계부터 다시 실행하면 재시도)")
+                    output = last_nonempty
             except EmptyResponseError as exc:
                 raw, output, err = "", last_nonempty, str(exc)
             _sec = time.time() - _t0
@@ -370,3 +377,16 @@ class Pipeline:
             if on_stage:
                 on_stage(result)
         return results
+
+
+_ANALYSIS_MARKERS = ("원문 대조", "대조 검사", "| 판정 |", "|---|", "## 1.", "검사 결과", "문제 지점", "## 수정 목록", "### 검토")
+
+def _looks_like_analysis(text: str) -> bool:
+    """번역문이 아니라 마크다운 표/제목 위주의 분석 결과처럼 보이면 True."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    head = t[:600]
+    hits = sum(1 for m in _ANALYSIS_MARKERS if m in head)
+    table_lines = sum(1 for l in t.splitlines()[:40] if l.strip().startswith("|"))
+    return hits >= 2 or table_lines >= 5

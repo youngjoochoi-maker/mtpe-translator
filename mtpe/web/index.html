@@ -251,7 +251,7 @@
     </div>
     <div class="hint">엑셀(.xlsx) 권장 — 인물·용어·호칭 등 <b>시트별로</b> 정리(txt/md/docx도 가능).
       모든 시트가 AI에게 참고로 전달됩니다. 최신 1개만 유지(주차 업데이트 시 교체).</div>
-    <div class="hint"><a href="/api/tb-template" download>📄 양식 템플릿 내려받기 (.xlsx)</a> — 헤더·예시가 채워진 파일을 받아 그대로 작성하세요.</div>
+    <div class="hint"><a href="/api/tb-template" id="tbTplLink" download>📄 양식 템플릿 내려받기 (.xlsx)</a> — 헤더·예시가 채워진 파일을 받아 그대로 작성하세요.</div>
     <div id="tbSheets"></div>
     <div class="tbrow" style="margin-top:12px; flex-wrap:wrap; align-items:center; gap:6px;">
       <span class="fhelp" style="width:100%;">🇯🇵 <b>일본어 작품 제목</b> — 한일(ko-jp) 워드 상단 제목 블록에 사용합니다 (작품명 · −ノベル版− · 第N話, 볼드·가운데). 회차 번호는 자동. 다른 언어에는 영향 없어요.</span>
@@ -275,6 +275,12 @@
     </div>
     <div id="epList" class="eplist"><div class="hint" style="padding:10px;">작품을 선택하면 회차가 표시됩니다.</div></div>
 
+    <div class="ckline" style="margin:8px 0 6px; align-items:center;" title="여러 회차를 동시에 번역합니다. 제약은 PC 성능이 아니라 모델 API 의 분당 한도예요. 429(한도) 오류가 잦으면 낮추세요.">
+      동시 실행 <select id="concurrency" style="width:auto; min-width:70px;">
+        <option value="1">1개(순차)</option><option value="2">2개</option><option value="3">3개</option>
+        <option value="4">4개</option><option value="5">5개</option><option value="6">6개</option>
+      </select> <span class="fhelp">회차를 동시에 · 한도 오류 잦으면 낮추기</span>
+    </div>
     <button class="runbtn" id="runBtn">▶ 선택 회차 번역 (<span id="runCount">0</span>)</button>
     <div id="runNote" class="note" style="display:none;"></div>
     <button class="sec" id="estBtn" style="width:100%; margin-top:8px;">🔎 예상 시간·비용 보기</button>
@@ -397,6 +403,10 @@ async function bootstrap() {
   if (r.status === 401) { location.href = "/login"; return; }
   const d = await r.json();
   BUNDLES = d.bundles; MODELS = d.models; DEFAULTS = d.defaults; KEYSTATUS = d.key_status;
+  try {
+    const _cc = localStorage.getItem("mtpe_concurrency") || String((DEFAULTS && DEFAULTS.concurrency) || 3);
+    if ($("concurrency")) $("concurrency").value = _cc;
+  } catch (e) {}
 
   // 회사 공용 키 운영: 키 입력 UI 숨기고, 키 검사 통과 처리
   if (d.key_managed) {
@@ -648,7 +658,7 @@ function autoDeliver(auto) {
       if (window.pywebview.api && window.pywebview.api.reveal_path) window.pywebview.api.reveal_path(auto.dir);
     } catch (e) {}
     if (box) {
-      let h = `<button class="sec" id="autoOpen">📂 저장 폴더 열기</button>`;
+      let h = `<button class="sec" id="autoOpen">📂 저장 폴더 열기</button> <span class="fhelp">저장 위치: <code>${(auto.dir||"").replace(/</g,"&lt;")}</code></span>`;
       if (auto.zip) h += ` <a href="${auto.zip.url}" download class="evlink">⬇ ${auto.zip.name}</a>`;
       box.innerHTML = h;
       const ob = $("autoOpen");
@@ -767,7 +777,8 @@ $("estBtn").addEventListener("click", async () => {
     const resp = await fetch("/api/estimate", { method:"POST",
       headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({ work:$("workSelect").value, lang:$("langSelect").value,
-        version:$("versionSelect").value, model, episodes:eids }) });
+        version:$("versionSelect").value, model, episodes:eids,
+        concurrency: parseInt(($("concurrency") && $("concurrency").value) || "3", 10) || 3 }) });
     const d = await resp.json();
     if (!d.ok) { $("estInfo").textContent = d.error || "예상 실패"; return; }
     const tok = (d.est_in||0)+(d.est_out||0);
@@ -801,6 +812,17 @@ $("consoleClear").addEventListener("click", async (e) => {
 });
 pollLog();
 
+
+// 설정집 양식 템플릿: 현재 언어쌍에 맞춰(호칭 시트는 중한만)
+function refreshTbTplLink() {
+  const a = $("tbTplLink"); if (!a) return;
+  const l = ($("langSelect") && $("langSelect").value) || "";
+  a.href = "/api/tb-template" + (l ? "?lang=" + encodeURIComponent(l) : "");
+}
+$("langSelect").addEventListener("change", refreshTbTplLink);
+document.addEventListener("DOMContentLoaded", refreshTbTplLink);
+setTimeout(refreshTbTplLink, 500);
+
 $("runBtn").addEventListener("click", async () => {
   const eids = [...document.querySelectorAll("#epList .epchk:checked")].map(c => c.value);
   if (!eids.length) return alert("번역할 회차를 선택하세요.");
@@ -821,9 +843,11 @@ $("runBtn").addEventListener("click", async () => {
   $("episodes").innerHTML = "";
   $("consoleBox").open = true; startLogPolling();
 
+  const concurrency = parseInt(($("concurrency") && $("concurrency").value) || "3", 10) || 3;
+  try { localStorage.setItem("mtpe_concurrency", String(concurrency)); } catch (e) {}
   const body = JSON.stringify({
     work: $("workSelect").value, lang: $("langSelect").value,
-    version: $("versionSelect").value, model, episodes: eids,
+    version: $("versionSelect").value, model, episodes: eids, concurrency,
   });
   try {
     const resp = await fetch("/api/run", {
@@ -849,18 +873,27 @@ $("runBtn").addEventListener("click", async () => {
 
 let curStep = null;
 function handleRun(ev) {
-  if (ev.type === "run_start") {
-    toast(ev.tb ? ("설정집 사용: " + ev.tb) : "설정집 없이 진행");
+  if (ev.type === "ping") {
+    return; // 연결 유지용
+  } else if (ev.type === "run_start") {
+    toast((ev.tb ? ("설정집 사용: " + ev.tb) : "설정집 없이 진행")
+      + (ev.concurrency > 1 ? ` · ${ev.concurrency}회차 동시 실행` : ""));
   } else if (ev.type === "episode_start") {
     const block = epBlock(ev.episode, ev.index, ev.total, ev.steps);
-    $("episodes").appendChild(block);
+    block.dataset.index = ev.index;
+    // 동시 실행 시 시작 순서가 뒤섞이므로 회차 번호(index) 순으로 끼워 넣는다
+    const kids = [...$("episodes").children];
+    const after = kids.find(k => parseInt(k.dataset.index || "-1", 10) > ev.index);
+    if (after) $("episodes").insertBefore(block, after); else $("episodes").appendChild(block);
     const first = block.querySelector(".step");
     if (first) first.classList.add("run");
     curStep = first;
-    block.scrollIntoView({ behavior:"smooth", block:"nearest" });
+    if (ev.index === 0) block.scrollIntoView({ behavior:"smooth", block:"nearest" });
   } else if (ev.type === "step") {
     const block = $("ep-" + cssEsc(ev.episode));
+    if (!block) return;
     const el = block.querySelector(`.step[data-sid="${ev.id}"]`);
+    if (!el) return;
     el.classList.add("done"); el.classList.remove("run");
     if (ev.skipped) {
       el.querySelector(".meta").textContent = "건너뜀 (프롬프트 비어 있음)";
@@ -909,16 +942,25 @@ function handleRun(ev) {
     }
   } else if (ev.type === "episode_error") {
     const block = $("ep-" + cssEsc(ev.episode));
-    if (block) block.querySelector(".epstat").textContent = "오류: " + ev.message;
-    else { $("runNote").style.display="block"; $("runNote").textContent = `${ev.episode}: ${ev.message}`; }
+    if (block) {
+      block.querySelector(".epstat").textContent = "⚠ 실패";
+      const em = document.createElement("div"); em.className = "note";
+      em.textContent = `이 회차는 실패했어요 (다른 회차는 계속 진행됩니다): ${ev.message}`;
+      block.querySelector(".epbody").appendChild(em);
+    } else { $("runNote").style.display="block"; $("runNote").textContent = `${ev.episode}: ${ev.message}`; }
   } else if (ev.type === "all_done") {
     $("runNote").style.display = "block"; $("runNote").className = "note ok";
     let html;
+    const _done = (ev.done != null) ? ev.done : ev.count;
+    const _fail = (ev.count||0) - _done;
+    const _head = _fail > 0 ? `⚠ 완료 ${_done}/${ev.count}회차 (실패 ${_fail})` : `✅ 전체 완료 (${ev.count}회차)`;
     if (ev.seconds != null) {
       const tok = (ev.in_tokens||0)+(ev.out_tokens||0);
-      html = `✅ 전체 완료 (${ev.count}회차) — 총 소요 ${fmtSec(ev.seconds)} · 총 토큰 ${fmtTok(tok)} · 총 비용 ${fmtCost(ev.cost)}`;
+      html = `${_head} — 실제 ${fmtSec(ev.wall_seconds != null ? ev.wall_seconds : ev.seconds)}`
+        + (ev.concurrency > 1 ? ` (${ev.concurrency}개 동시 · 회차 합산 ${fmtSec(ev.seconds)})` : "")
+        + ` · 총 토큰 ${fmtTok(tok)} · 총 비용 ${fmtCost(ev.cost)}`;
     } else {
-      html = `✅ 전체 완료 (${ev.count}회차)`;
+      html = _head;
     }
     const auto = ev.auto || null;
     if (auto && (auto.files || []).length) {
@@ -1225,6 +1267,7 @@ function populateTuneModels() {
 async function populateTuneEpisodes() {
   const sel = $("tuneEpisode");
   if (!sel) return;
+  const _keep = sel.value;
   if (!mState.work) { sel.innerHTML = `<option value="">(세트를 먼저 불러오세요)</option>`; return; }
   try {
     const d = await (await fetch(`/api/library?work=${encodeURIComponent(mState.work)}`)).json();
@@ -1232,12 +1275,14 @@ async function populateTuneEpisodes() {
     sel.innerHTML = eps.length
       ? eps.map(e => `<option value="${e.id.replace(/"/g,'&quot;')}">${e.name}</option>`).join("")
       : `<option value="">(회차 없음 — 번역 탭에서 업로드)</option>`;
+    if (_keep && [...sel.options].some(o => o.value === _keep)) sel.value = _keep;
   } catch (e) { sel.innerHTML = `<option value="">(불러오기 실패)</option>`; }
 }
 function cardByStepId(id) { return document.querySelectorAll('#mSteps .mstep')[id - 1]; }
 
 async function runTune(fromStep = 0) {
   startLogPolling();
+  await populateTuneEpisodes();   // 목록이 오래됐을 수 있어 실행 직전에 최신화
   if (!mState.work) return alert("먼저 프롬프트 세트를 불러오거나 새로 만드세요.");
   const episode = $("tuneEpisode").value;
   if (!episode) return alert("샘플 회차를 선택하세요. (번역 탭에서 회차를 업로드/폴더지정)");

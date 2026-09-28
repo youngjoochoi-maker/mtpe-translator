@@ -10,11 +10,18 @@ from collections import deque
 _LINES: deque[tuple[int, str]] = deque(maxlen=800)
 _SEQ = 0
 _LOCK = threading.Lock()
+_CTX = threading.local()  # 스레드별 문맥(회차명) — 동시 실행 시 로그 구분용
+
+
+def set_context(name: str | None) -> None:
+    """현재 스레드의 로그 접두어(예: 회차명)를 설정. None 이면 해제."""
+    _CTX.name = name
 
 
 def log(msg: str) -> None:
     global _SEQ
-    line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+    ctx = getattr(_CTX, "name", None)
+    line = f"[{time.strftime('%H:%M:%S')}] " + (f"[{ctx}] " if ctx else "") + msg
     with _LOCK:
         _SEQ += 1
         _LINES.append((_SEQ, line))

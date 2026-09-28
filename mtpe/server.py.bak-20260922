@@ -115,9 +115,7 @@ _NOVEL_MARK = "−ノベル版−"  # −ノベル版− (− 는 U+2212)
 _ELLIPSIS_ASCII_RE = re.compile(r'\.{3,}')
 _ELLIPSIS_RUN_RE = re.compile(r'…+')
 _FW_DIGITS = str.maketrans('0123456789', '０１２３４５６７８９')
-_JP_EPNO_LINE_RE = re.compile(
-    r'(?:第\s*[0-9０-９]+\s*話|[0-9０-９]+\s*화|제\s*[0-9０-９]+\s*화|EP\.?\s*[0-9０-９]+|[0-9０-９]+\.?)\s*[.:：]?',
-    re.I)  # 본문 맨 앞 원문/번역 화수줄(예: 172. / 第684話 / 684화) — 제목블록이 대신함
+_JP_EPNO_LINE_RE = re.compile(r'\d+\.?')          # 본문 맨 앞 원문 화수줄(예: 172.)
 _JP_SCENE_RE = re.compile(r'[\*＊][\s\*＊]*')  # 장면전환 별표만으로 된 줄
 
 
@@ -140,10 +138,6 @@ def _norm_ellipsis(s: str) -> str:
 _CLOSE_BRACKETS = "｣」』）\)\]］＞’”"
 _JP_PERIOD_BEFORE_CLOSE_RE = re.compile(r'。(?=[' + _CLOSE_BRACKETS + r'])')
 _JP_SPACE_AFTER_QE_RE = re.compile(r'([？！])[ \u3000]+')
-# 줄 전체가 『…』 하나로 된 대사(문장 내 인용이 아닌 독립 대사)만 낫표로 바꾼다
-_JP_DBL_BRACKET_DIALOG_RE = re.compile(r'^\s*『([^『』]*)』\s*$')
-_JP_SQUOTE_RE = re.compile(r"[‘']([^‘’'\n]{1,200}?)[’']")
-_JP_DQUOTE_RE = re.compile(r'[“"]([^“”"\n]{1,200}?)[”"]')
 
 
 def _jp_text_transform(line: str) -> str:
@@ -153,11 +147,6 @@ def _jp_text_transform(line: str) -> str:
     - 닫는 괄호(｣」』) 앞 마침표(。) 제거
     - 물음표·느낌표(？！) 뒤 공백 제거"""
     line = line.replace("「", "｢").replace("」", "｣")
-    # 겹낫표로 나온 대사 → 반각 낫표 (모델이 대사에 『』를 쓰는 경우)
-    line = _JP_DBL_BRACKET_DIALOG_RE.sub(lambda m: "｢" + m.group(1) + "｣", line)
-    # 속마음(작은따옴표) → （ ）, 강조·인용(큰따옴표) → 『 』  ※ 일본 출판 관행
-    line = _JP_SQUOTE_RE.sub(lambda m: "（" + m.group(1) + "）", line)
-    line = _JP_DQUOTE_RE.sub(lambda m: "『" + m.group(1) + "』", line)
     line = _norm_ellipsis(line)
     line = _JP_PERIOD_BEFORE_CLOSE_RE.sub("", line)
     line = _JP_SPACE_AFTER_QE_RE.sub(r"\1", line)
@@ -200,21 +189,6 @@ def _add_doc_paragraphs(doc, text: str, *, lang=None, work=None, episode=None) -
       · 본문 양쪽정렬, 대사 ｢｣·말줄임표 …… 변환.
       · 끝에 본문 2줄 띄우고 「つづく」 우측정렬 + 1줄.
       · 폰트 Yu Gothic, 본문 10pt, 줄간격 1.15, 단락 뒤 공백 0."""
-    if _is_jp(lang):
-        # 빈 줄(런 없는 단락)은 문서 기본 글꼴을 따르므로 기본값도 Yu Gothic 으로 (MS Mincho 섞임 방지)
-        try:
-            from docx.oxml.ns import qn
-            from docx.shared import Pt
-            st = doc.styles["Normal"]
-            st.font.name = "Yu Gothic"; st.font.size = Pt(_JP_BODY_PT)
-            rpr = st.element.get_or_add_rPr()
-            rf = rpr.find(qn("w:rFonts"))
-            if rf is None:
-                rf = rpr.makeelement(qn("w:rFonts"), {}); rpr.append(rf)
-            for k in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
-                rf.set(qn(k), "Yu Gothic")
-        except Exception:  # noqa: BLE001
-            pass
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Pt
     jp = _is_jp(lang)
@@ -251,13 +225,6 @@ def _add_doc_paragraphs(doc, text: str, *, lang=None, work=None, episode=None) -
                                   or _JP_EPNO_LINE_RE.fullmatch(lines[k].strip())):
             k += 1
         lines = lines[k:]
-        # 연속 빈 줄은 하나로 (원문 장면전환 전후 이중 개행 등)
-        _c = []
-        for _l in lines:
-            if not _l.strip() and _c and not _c[-1].strip():
-                continue
-            _c.append(_l)
-        lines = _c
     for line in lines:
         m = _CENTER_LINE_RE.match(line)
         if m:
@@ -707,13 +674,6 @@ def _episode_path(work: str, eid: str) -> Path | None:
         p = Path(sd) / eid
         if p.exists():
             return p
-    # 확장자·대소문자만 다른 경우(예: 목록은 .docx, 실제 파일은 .DOCX)도 찾아준다
-    stem = Path(eid).stem.lower()
-    for base in ([_work_dir(work) / "episodes"] + ([Path(sd)] if sd else [])):
-        if base.is_dir():
-            for f in base.iterdir():
-                if f.is_file() and f.stem.lower() == stem and f.suffix.lower() in SOURCE_EXTS:
-                    return f
     return None
 
 
@@ -863,68 +823,73 @@ def delete_tb(work: str) -> JSONResponse:
 
 
 @app.get("/api/tb-template")
-def tb_template(lang: str = "") -> StreamingResponse:
+def tb_template() -> StreamingResponse:
     """설정집(TB) 표준 양식 템플릿(.xlsx)을 생성해 다운로드.
 
-    실제 운영 TB(예: 천성태자 TB)와 같은 3시트 구조: 인물 / 용어 / 호칭.
-    호칭(화자×청자 매트릭스)은 중한(zh-ko)에서만 포함한다. lang 파라미터로 언어쌍 지정.
+    모든 시트가 텍스트로 변환되어 프롬프트에 주입되므로, 시트/헤더 구조를
+    이 양식에 맞춰 채우면 일관되게 활용된다.
     """
     import io
 
     import openpyxl
-    from openpyxl.styles import Alignment, Font, PatternFill
-
-    lang = (lang or "").lower()
-    is_zh = lang.startswith("zh")
-    src_lbl, tgt_lbl = {
-        "ko-en": ("한국어", "영어"), "ko-jp": ("한국어", "일본어"), "zh-ko": ("중국어", "한국어"),
-    }.get(lang, ("원문", "번역"))
-    if lang == "ko-ja":
-        src_lbl, tgt_lbl = "한국어", "일본어"
+    from openpyxl.styles import Font
 
     wb = openpyxl.Workbook()
+
+    sheets = {
+        "안내": [
+            ["이 파일은 설정집(TB) 양식입니다. 각 시트를 채워 업로드하세요."],
+            ["· 모든 시트가 번역 AI에게 참고 자료로 전달됩니다(빈 행은 무시)."],
+            ["· 시트/열은 자유롭게 추가·수정 가능합니다. 아래는 권장 구조입니다."],
+            ["· 첫 줄(머리글)은 그대로 두고, 둘째 줄부터 내용을 채우세요(예시 행은 지우거나 덮어쓰기)."],
+        ],
+        "인물": [
+            ["중문명", "국문명", "성별", "첫 등장", "메모", "말버릇"],
+            ["唐清晨", "당청천", "여", "1화", "회귀한 주인공", "단호한 말투"],
+        ],
+        "용어": [
+            ["범주", "중문명", "국문명", "메모"],
+            ["지명", "南河村", "남하촌", "주인공이 사는 마을"],
+            ["설정", "末世", "말세", "주인공의 전생 배경"],
+        ],
+        "호칭": [
+            ["화자", "청자", "존대/반말", "자기지칭", "청자호칭", "어미", "비고"],
+            ["당청천", "동생들", "반말", "나/누나", "너희", "~야/~자", "다정한 보호자 말투"],
+        ],
+        "인물관계": [
+            ["인물 A", "인물 B", "관계", "비고"],
+            ["당청천", "이란화", "손녀-할머니", "정서적으로 적대 관계"],
+        ],
+        "제목": [
+            ["권", "장", "장제목(원문)", "장제목(번역)"],
+            ["1", "1", "她回来了", "그녀가 돌아왔다"],
+        ],
+        "서식 규칙": [
+            ["항목", "규칙", "예시"],
+            ["대사/지문", "한 문단에 붙이지 말고 행갈음", "그가 말했다.\\n\"예.\""],
+            ["생략부호", "……로 통일", "……"],
+        ],
+    }
+
+    first = True
     bold = Font(bold=True)
-    head_fill = PatternFill("solid", start_color="DCE6F1", end_color="DCE6F1")
-
-    # ── 인물 ──
-    ws = wb.active; ws.title = "인물"
-    ws.append(["NO", f"{src_lbl}명", f"{tgt_lbl}명", "성별", "첫 등장시기", "메모", "말버릇"])
-    ws.append([1, "", "", "", "1화", "", ""])
-    # ── 용어 ──
-    ws2 = wb.create_sheet("용어")
-    ws2.append([None, None, None, None, None,
-                "빨간색 글씨: 수정, 노란색 셀: 추가\n\n※ 한글만 보고 이해하기 어려운 단어는\n한자 병기, 역주 필수입니다. ※" if is_zh
-                else f"열 순서는 반드시 「{src_lbl} → {tgt_lbl}」 (출발어 → 도착어) 입니다."])
-    ws2.append(["NO", "범주", "등장회차", f"{src_lbl}명", f"{tgt_lbl}명", "메모"])
-    ws2.append([1, "명칭", 1, "", "", ""])
-    ws2["F1"].alignment = Alignment(wrap_text=True, vertical="top")
-    ws2.row_dimensions[1].height = 60
-    # ── 호칭 (중한 전용) ──
-    if is_zh:
-        ws3 = wb.create_sheet("호칭")
-        ws3.append(["NO", "F=존대/I=반말", "1 (인물A)", "1 (인물B)", "2 (인물C)"])
-        ws3.append([1, "1 (인물A)", None, "F(당신, 저\n~해요)", "F(\n~합니다)"])
-        ws3.append([2, "1 (인물B)", "I(\n~느냐)", None, None])
-        ws3.append([])
-        ws3.append(["※ 행=화자, 열=청자. 칸에 F/I + (호칭, 어미) 형식으로. 열 머리글의 숫자는 첫 등장 회차."])
-
-    for w in wb.worksheets:
-        hdr_row = 2 if w.title == "용어" else 1
-        for c in w[hdr_row]:
-            if c.value is not None:
-                c.font = bold; c.fill = head_fill
-        w.column_dimensions["A"].width = 6
-        for col in "BCDEFG":
-            w.column_dimensions[col].width = 18
+    for title, rows in sheets.items():
+        ws = wb.active if first else wb.create_sheet()
+        ws.title = title
+        first = False
+        for r, row in enumerate(rows):
+            for c, val in enumerate(row):
+                cell = ws.cell(row=r + 1, column=c + 1, value=val)
+                if r == 0 and title != "안내":
+                    cell.font = bold
 
     bio = io.BytesIO()
     wb.save(bio)
     bio.seek(0)
-    fname = f"TB_template_{lang or 'common'}.xlsx"
     return StreamingResponse(
         bio,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        headers={"Content-Disposition": 'attachment; filename="TB_template.xlsx"'},
     )
 
 
@@ -1119,25 +1084,6 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
-def _model_tok_per_sec(model: str) -> float:
-    """모델별 대략적 출력 속도(토큰/초). QA 실측(2026-09) 기반 보정값.
-    gemini 3.1 pro ≈ 55 · gpt-5.6 ≈ 80 · gpt-5.6-terra ≈ 40 · claude opus 5 ≈ 30 · 기타 45"""
-    m = (model or "").lower()
-    if "terra" in m or "luna" in m:
-        return 40.0
-    if "gpt-5" in m or "gpt-4.1" in m:
-        return 80.0
-    if "opus" in m:
-        return 30.0
-    if "sonnet" in m or "haiku" in m:
-        return 60.0
-    if "flash" in m:
-        return 120.0
-    if "gemini" in m:
-        return 55.0
-    return 45.0
-
-
 @app.post("/api/estimate")
 def estimate_run(payload: dict = Body(...)) -> JSONResponse:
     """실행 전 예상: 실제 단계 구성(시스템+지시문+원문+설정집(TB)+누적출력)을 모사해
@@ -1175,7 +1121,7 @@ def estimate_run(payload: dict = Body(...)) -> JSONResponse:
     except Exception:
         cost = 0.0
     # 시간: 호출당 지연(~2.5s) + 출력 토큰 처리량(~45토큰/s). 모델 속도에 따라 편차 큼.
-    est_seconds = int(calls * 2.5 + est_out / _model_tok_per_sec(model))
+    est_seconds = int(calls * 2.5 + est_out / 45.0)
     # 동시 실행이면 벽시계 시간은 대략 1/N (토큰·비용은 동일)
     _cc = _run_concurrency(payload)
     n_eps = max(1, len(payload.get("episodes", []) or []))
