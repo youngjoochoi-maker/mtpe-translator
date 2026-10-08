@@ -1024,7 +1024,17 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                         q.put({"type": "episode_error", "episode": eid, "index": idx,
                                "message": "원문 파일을 찾을 수 없습니다."})
                         return
-                    source = read_text(str(p))
+                    source = None
+                    _last = None
+                    for _try in range(3):
+                        try:
+                            source = read_text(str(p)); break
+                        except Exception as _e:  # noqa: BLE001 — 다른 프로그램이 파일을 잡고 있는 경우 등
+                            _last = _e; import time as _t; _t.sleep(0.8)
+                    if source is None:
+                        raise RuntimeError(f"원문 파일을 읽을 수 없습니다({p.name}): {_last}. 파일이 다른 프로그램(Word 등)에서 열려 있으면 닫고 다시 시도하세요.")
+                    if not source.strip():
+                        raise RuntimeError(f"원문 파일이 비어 있습니다({p.name}). 파일을 다시 업로드하세요.")
                     pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
                     b = pipe.bundle
                     q.put({"type": "episode_start", "episode": eid,
@@ -1042,7 +1052,10 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                                "out_tokens": r.out_tokens, "cost": r.cost})
                     outd = out_root / Path(eid).stem
                     outd.mkdir(parents=True, exist_ok=True)
-                    (outd / "final.txt").write_text(pipe.final_output, encoding="utf-8")
+                    try:
+                        (outd / "final.txt").write_text(pipe.final_output, encoding="utf-8")
+                    except Exception as _e:  # noqa: BLE001 — 이전 결과 파일이 열려 있어 잠긴 경우
+                        _log(f"⚠ final.txt 저장 실패(파일 열려 있음?) · {str(_e)[:120]} — 결과는 화면에 표시됨")
                     # 완료 즉시 Word(.docx) 자동 저장 — 창을 닫아도 결과가 남도록
                     doc_name = f"{safe_work}_{Path(eid).stem}.docx"
                     try:
@@ -1427,10 +1440,12 @@ async def automate_tb(request: Request, work: str = Form(...), file: UploadFile 
 
 @app.post("/api/automate/episodes")
 async def automate_episodes(request: Request, work: str = Form(...), batch: str = Form(...),
-                            files: list[UploadFile] = File(...),
-                            replace: str = Form("true")) -> JSONResponse:
+                            files: list[UploadFile] = File(default=[]),
+                            file: UploadFile | None = File(default=None),
+                            replace: str = Form("false")) -> JSONResponse:
     """배치 폴더의 회차 파일을 works/<작품>/episodes/<배치>/ 에 저장.
-    replace=true(기본) 면 기존 배치 폴더를 비우고 새로 채움(드라이브 폴더가 진실)."""
+    n8n 처럼 파일을 하나씩 올릴 때는 먼저 /api/automate/episodes/clear 를 1회 호출한 뒤 file 필드로 반복 호출.
+    replace=true 면 이 호출 전에 배치 폴더를 비움(기본 false)."""
     err = _check_api_token(request)
     if err:
         return err
@@ -1445,6 +1460,10 @@ async def automate_episodes(request: Request, work: str = Form(...), batch: str 
                 f.unlink()
     d.mkdir(parents=True, exist_ok=True)
     saved, skipped = [], []
+    if file is not None:
+        files = list(files) + [file]
+    if not files:
+        return JSONResponse({"ok": False, "error": "files 또는 file 이 필요합니다."}, status_code=400)
     for uf in files:
         try:
             name = _safe_seg(Path(uf.filename or "").name)
@@ -1457,6 +1476,25 @@ async def automate_episodes(request: Request, work: str = Form(...), batch: str 
     saved.sort(key=_natkey)
     return JSONResponse({"ok": True, "work": work, "batch": batch,
                          "episodes": saved, "skipped": skipped, "count": len(saved)})
+
+
+@app.post("/api/automate/episodes/clear")
+def automate_episodes_clear(request: Request, payload: dict = Body(...)) -> JSONResponse:
+    """배치 회차 폴더 비우기(n8n 이 파일을 하나씩 올리기 전에 1회 호출). body: work, batch"""
+    err = _check_api_token(request)
+    if err:
+        return err
+    try:
+        d = _batch_ep_dir(payload.get("work") or "", payload.get("batch") or "")
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
+    n = 0
+    if d.exists():
+        for f in d.iterdir():
+            if f.is_file():
+                f.unlink(); n += 1
+    d.mkdir(parents=True, exist_ok=True)
+    return JSONResponse({"ok": True, "removed": n, "dir": str(d)})
 
 
 def _batch_list_episodes(work: str, batch: str) -> list[str]:
@@ -1769,13 +1807,15 @@ def tune(payload: dict = Body(...)) -> StreamingResponse:
                 source = raw_source
             else:
                 ep = payload.get("episode")
-                p = _episode_path(payload.get("work"), ep) if ep else None
+                ep_work = payload.get("episode_work") or payload.get("work")  # 회차는 번역 탭 작품 밑에 있을 수 있음
+                p = _episode_path(ep_work, ep) if ep else None
                 if not p:
                     yield emit({"type": "error", "message": "시험할 회차(원문)를 선택하세요."})
                     return
                 source = read_text(str(p))
 
-            tb_text = _read_tb_text(payload.get("work"))
+            # 설정집도 회차가 속한 작품 것을 우선 사용(없으면 프롬프트 세트 작품 것)
+            tb_text = _read_tb_text(payload.get("episode_work") or payload.get("work")) or _read_tb_text(payload.get("work"))
             pipe, overrides = _build_tune_pipeline(payload)
             llm = _mock_llm if model == "mock" else None
             from_step = int(payload.get("from_step") or 0)

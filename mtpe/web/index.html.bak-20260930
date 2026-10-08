@@ -344,7 +344,7 @@
       <b>🧪 시험 실행 (프롬프트 튜닝)</b>
       <span class="fhelp">— 저장하지 않은 편집본으로 샘플 회차를 돌려, 각 단계 결과를 보고 프롬프트를 고칩니다</span>
       <div class="bar" style="margin-top:8px;">
-        <div><label>샘플 회차 <span class="fhelp">(⌘/Ctrl 클릭으로 여러 개 선택)</span></label><select id="tuneEpisode" multiple size="4" style="min-width:260px;"></select></div>
+        <div><label>샘플 회차</label><select id="tuneEpisode"></select></div>
         <div><label>모델</label><select id="tuneModel"></select></div>
         <div><button class="runbtn-sm" id="tuneRun">▶ 시험 실행 (전체)</button></div>
         <div style="align-self:center;"><span id="tuneStatus" class="fhelp"></span></div>
@@ -766,9 +766,7 @@ async function makeEvalSheet(fin, episode) {
 
 function fmtSec(s){ s=Math.round(s||0); if(s<60) return s+"초"; return Math.floor(s/60)+"분 "+(s%60)+"초"; }
 function fmtTok(n){ return (n||0).toLocaleString()+"토큰"; }
-function fmtCost(c, tokens){ c=Number(c)||0;
-  if(c<=0){ const t=Number(tokens)||0; return t>0 ? "$0 (이 모델 가격표 없음)" : "$0 (AI 호출 없음)"; }
-  if(c<0.01) return "$"+c.toFixed(4); return "$"+c.toFixed(3); }
+function fmtCost(c){ c=Number(c)||0; if(c<=0) return "$0 (무료/가격정보 없음)"; if(c<0.01) return "$"+c.toFixed(4); return "$"+c.toFixed(3); }
 $("estBtn").addEventListener("click", async () => {
   const eids = [...document.querySelectorAll("#epList .epchk:checked")].map(c => c.value);
   if (!eids.length) return alert("회차를 먼저 선택하세요.");
@@ -785,7 +783,7 @@ $("estBtn").addEventListener("click", async () => {
     if (!d.ok) { $("estInfo").textContent = d.error || "예상 실패"; return; }
     const tok = (d.est_in||0)+(d.est_out||0);
     $("estInfo").innerHTML = `대략 예상 (${d.episodes}회차 · ${d.steps}단계${d.tb_used ? " · 설정집 포함" : ""})<br>`
-      + `⏱ 시간 ~${fmtSec(d.est_seconds)} · 🔤 토큰 ~${fmtTok(tok)} · 💲 비용 ~${fmtCost(d.est_cost, tok)}`
+      + `⏱ 시간 ~${fmtSec(d.est_seconds)} · 🔤 토큰 ~${fmtTok(tok)} · 💲 비용 ~${fmtCost(d.est_cost)}`
       + `<br><span class="fhelp">※ 러프한 추정이에요${d.tb_used ? " (설정집이 매 단계 함께 전송돼 토큰·비용이 커집니다)" : ""}. 실제 값은 실행하면 정확히 표시됩니다.</span>`;
   } catch(e) { $("estInfo").textContent = "예상 요청 실패: " + e.message; }
 });
@@ -905,7 +903,7 @@ function handleRun(ev) {
       el.querySelector(".body").textContent = `⚠ ${ev.error}\n\n→ 이 단계 결과 대신 직전 단계 결과를 최종으로 사용했습니다. 다시 시도하면 정상 처리될 수 있어요.`;
     } else {
       el.querySelector(".meta").textContent = `${ev.model} · ${ev.chars}자`
-        + (ev.seconds != null ? ` · ${fmtSec(ev.seconds)} · ${fmtCost(ev.cost, (ev.in_tokens||0)+(ev.out_tokens||0))}` : "");
+        + (ev.seconds != null ? ` · ${fmtSec(ev.seconds)} · ${fmtCost(ev.cost)}` : "");
       el.querySelector(".body").textContent = ev.output;
     }
     const next = el.nextElementSibling;
@@ -939,7 +937,7 @@ function handleRun(ev) {
     block.querySelector(".epbody").appendChild(fin);
     if (ev.seconds != null) {
       const sm = document.createElement("div"); sm.className = "note ok";
-      sm.innerHTML = `이 회차 — 소요 ${fmtSec(ev.seconds)} · 입력 ${fmtTok(ev.in_tokens)} · 출력 ${fmtTok(ev.out_tokens)} · 비용 ${fmtCost(ev.cost, (ev.in_tokens||0)+(ev.out_tokens||0))}`;
+      sm.innerHTML = `이 회차 — 소요 ${fmtSec(ev.seconds)} · 입력 ${fmtTok(ev.in_tokens)} · 출력 ${fmtTok(ev.out_tokens)} · 비용 ${fmtCost(ev.cost)}`;
       block.querySelector(".epbody").appendChild(sm);
     }
   } else if (ev.type === "episode_error") {
@@ -955,14 +953,12 @@ function handleRun(ev) {
     let html;
     const _done = (ev.done != null) ? ev.done : ev.count;
     const _fail = (ev.count||0) - _done;
-    const _fails = [...document.querySelectorAll("#episodes .epbody .note")].map(n => n.textContent).filter(t => t.includes("실패했어요"));
-    const _why = _fails.length ? ` — 사유: ${_fails[0].replace(/^.*?: /, "").slice(0, 160)}` : "";
-    const _head = _fail > 0 ? `⚠ 완료 ${_done}/${ev.count}회차 (실패 ${_fail})${_why}` : `✅ 전체 완료 (${ev.count}회차)`;
+    const _head = _fail > 0 ? `⚠ 완료 ${_done}/${ev.count}회차 (실패 ${_fail})` : `✅ 전체 완료 (${ev.count}회차)`;
     if (ev.seconds != null) {
       const tok = (ev.in_tokens||0)+(ev.out_tokens||0);
       html = `${_head} — 실제 ${fmtSec(ev.wall_seconds != null ? ev.wall_seconds : ev.seconds)}`
         + (ev.concurrency > 1 ? ` (${ev.concurrency}개 동시 · 회차 합산 ${fmtSec(ev.seconds)})` : "")
-        + ` · 총 토큰 ${fmtTok(tok)} · 총 비용 ${fmtCost(ev.cost, (ev.in_tokens||0)+(ev.out_tokens||0))}`;
+        + ` · 총 토큰 ${fmtTok(tok)} · 총 비용 ${fmtCost(ev.cost)}`;
     } else {
       html = _head;
     }
@@ -1086,7 +1082,6 @@ function stepCard(s, idx) {
         <button type="button" class="linkbtn t-rerun">↻ 이 단계부터 다시</button>
         <button type="button" class="linkbtn t-showprompt">실제 보낸 프롬프트 보기</button>
       </div>
-      <div class="tuneTabs" style="display:flex; gap:6px; flex-wrap:wrap; margin:6px 0;"></div>
       <div class="tuneOut"></div>
       <div class="tunePrompt" style="display:none;"></div>
     </div>`;
@@ -1142,7 +1137,7 @@ async function mLoadBundle(work, lang, version) {
   renderSteps(d.steps);
   $("mTarget").textContent = `편집 중: ${d.work} / ${d.lang} / ${d.version} — STEP1~${d.steps.length} 프롬프트`;
   await mRefreshNextVer();
-  tuneOutputs = {}; tunePrompts = {}; tuneByEp = {}; tuneCurEp = "";
+  tuneOutputs = {}; tunePrompts = {};
   populateTuneEpisodes();
   mMsg("", null);
 }
@@ -1192,7 +1187,7 @@ $("mNewTemplate").addEventListener("click", async () => {
   renderSteps(tpl);
   $("mNewBox").style.display = "none";
   $("mNewWork").value = ""; $("mNewLang").value = "";
-  tuneOutputs = {}; tunePrompts = {}; tuneByEp = {}; tuneCurEp = "";
+  tuneOutputs = {}; tunePrompts = {};
   populateTuneEpisodes();
   await mSave("v1");   // 즉시 v1 생성 → 번역 탭 드롭다운에도 바로 보임
   mMsg(`새 작품 생성됨: ${work} / ${lang} / v1 — 이제 5단계 내용을 채우고 [현재 버전 덮어쓰기]로 저장하세요.`, true);
@@ -1260,10 +1255,8 @@ function mMsg(text, ok) {
 }
 
 /* ===== 프롬프트 튜닝 (시험 실행) ===== */
-let tuneOutputs = {};   // {단계id: 출력}  (현재 보고 있는 회차 기준)
+let tuneOutputs = {};   // {단계id: 출력}
 let tunePrompts = {};   // {단계id: 보낸 프롬프트}
-let tuneByEp = {};      // {회차: {단계id: {output, prompt, meta}}}  — 여러 회차 시험 실행용
-let tuneCurEp = "";     // 현재 실행/표시 중 회차
 
 function populateTuneModels() {
   const sel = $("tuneModel");
@@ -1274,25 +1267,15 @@ function populateTuneModels() {
 async function populateTuneEpisodes() {
   const sel = $("tuneEpisode");
   if (!sel) return;
-  const _keep = [...sel.selectedOptions].map(o => o.value);
+  const _keep = sel.value;
   if (!mState.work) { sel.innerHTML = `<option value="">(세트를 먼저 불러오세요)</option>`; return; }
   try {
-    // 프롬프트 세트(한영/한일 등)에는 회차가 없고, 회차는 번역 탭의 작품 밑에 있으므로 모든 작품에서 모은다
-    const works = [...new Set([mState.work, ...(BUNDLES || []).map(b => b.work)].filter(Boolean))];
-    const groups = [];
-    for (const w of works) {
-      try {
-        const d = await (await fetch(`/api/library?work=${encodeURIComponent(w)}`)).json();
-        const eps = d.episodes || [];
-        if (eps.length) groups.push({ w, eps });
-      } catch (e) { /* skip */ }
-    }
-    sel.innerHTML = groups.length
-      ? groups.map(g => `<optgroup label="${g.w.replace(/"/g,'&quot;')}">` +
-          g.eps.map(e => `<option value="${(g.w + "|" + e.id).replace(/"/g,'&quot;')}">${e.name}</option>`).join("") +
-          `</optgroup>`).join("")
+    const d = await (await fetch(`/api/library?work=${encodeURIComponent(mState.work)}`)).json();
+    const eps = d.episodes || [];
+    sel.innerHTML = eps.length
+      ? eps.map(e => `<option value="${e.id.replace(/"/g,'&quot;')}">${e.name}</option>`).join("")
       : `<option value="">(회차 없음 — 번역 탭에서 업로드)</option>`;
-    [...sel.options].forEach(o => { if (_keep.includes(o.value)) o.selected = true; });
+    if (_keep && [...sel.options].some(o => o.value === _keep)) sel.value = _keep;
   } catch (e) { sel.innerHTML = `<option value="">(불러오기 실패)</option>`; }
 }
 function cardByStepId(id) { return document.querySelectorAll('#mSteps .mstep')[id - 1]; }
@@ -1301,26 +1284,18 @@ async function runTune(fromStep = 0) {
   startLogPolling();
   await populateTuneEpisodes();   // 목록이 오래됐을 수 있어 실행 직전에 최신화
   if (!mState.work) return alert("먼저 프롬프트 세트를 불러오거나 새로 만드세요.");
-  const episodes = [...$("tuneEpisode").selectedOptions].map(o => o.value).filter(Boolean);
-  if (!episodes.length) return alert("샘플 회차를 선택하세요. (번역 탭에서 회차를 업로드/폴더지정)");
-  if (!fromStep) tuneByEp = {};
-  for (let ei = 0; ei < episodes.length; ei++) {
-    const _v = episodes[ei]; const _bar = _v.indexOf("|");
-    const epWork = _bar >= 0 ? _v.slice(0, _bar) : mState.work;
-    const episode = _bar >= 0 ? _v.slice(_bar + 1) : _v;
-    tuneCurEp = episode;
-    tuneOutputs = (tuneByEp[episode] && Object.fromEntries(Object.entries(tuneByEp[episode]).map(([k,v])=>[k,v.output]))) || {};
-    const _tag = episodes.length > 1 ? ` [${ei+1}/${episodes.length} ${episode}]` : "";
+  const episode = $("tuneEpisode").value;
+  if (!episode) return alert("샘플 회차를 선택하세요. (번역 탭에서 회차를 업로드/폴더지정)");
   const steps = collectSteps().map((s, i) => ({ id: i + 1, ...s }));
   const seed = {};
   if (fromStep) for (let k = 1; k < fromStep; k++) if (tuneOutputs[k] != null) seed["step" + k] = tuneOutputs[k];
   const payload = {
     work: mState.work, lang: mState.lang, version: mState.version,
-    model: $("tuneModel").value, episode, episode_work: epWork,
+    model: $("tuneModel").value, episode,
     source_lang: $("mSrcLang").value, target_lang: $("mTgtLang").value,
     steps, from_step: fromStep, seed,
   };
-  $("tuneStatus").textContent = (fromStep ? `${fromStep}단계부터 실행 중…` : "전체 실행 중…") + _tag;
+  $("tuneStatus").textContent = fromStep ? `${fromStep}단계부터 실행 중…` : "전체 실행 중…";
   $("tuneRun").disabled = true;
   try {
     const r = await fetch("/api/tune", {
@@ -1335,36 +1310,16 @@ async function runTune(fromStep = 0) {
       }
     }
   } catch (e) { $("tuneStatus").textContent = "오류: " + e.message; }
-  }  // for episodes
-  $("tuneRun").disabled = false;
-  if (episodes.length > 1) $("tuneStatus").textContent = `완료 ✓ (${episodes.length}개 회차) — 각 단계 결과에서 회차 탭을 눌러 비교`;
-}
-function renderTuneTabs(card, stepId) {
-  const tabs = card.querySelector(".tuneTabs"); if (!tabs) return;
-  const eps = Object.keys(tuneByEp).filter(e => tuneByEp[e][stepId]);
-  tabs.innerHTML = eps.length > 1
-    ? eps.map(e => `<button type="button" class="sec" data-ep="${e.replace(/"/g,'&quot;')}" style="${e===tuneCurEp?'font-weight:700;':''}">${e}</button>`).join("")
-    : "";
-  tabs.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
-    const e = b.dataset.ep; const r = tuneByEp[e][stepId]; tuneCurEp = e;
-    card.querySelector(".t-meta").textContent = r.meta;
-    card.querySelector(".tuneOut").textContent = r.output;
-    card.querySelector(".tunePrompt").textContent = r.prompt;
-    tabs.querySelectorAll("button").forEach(x => x.style.fontWeight = x===b ? "700" : "");
-  }));
+  finally { $("tuneRun").disabled = false; }
 }
 function handleTune(ev) {
   if (ev.type === "step") {
     tuneOutputs[ev.id] = ev.output; tunePrompts[ev.id] = ev.prompt || "";
-    const meta = `${ev.model} · ${ev.chars}자` + (tuneCurEp ? ` · ${tuneCurEp}` : "");
-    if (!tuneByEp[tuneCurEp]) tuneByEp[tuneCurEp] = {};
-    tuneByEp[tuneCurEp][ev.id] = { output: ev.output, prompt: ev.prompt || "", meta };
     const card = cardByStepId(ev.id); if (!card) return;
     card.querySelector(".tuneResult").style.display = "block";
-    card.querySelector(".t-meta").textContent = meta;
+    card.querySelector(".t-meta").textContent = `${ev.model} · ${ev.chars}자`;
     card.querySelector(".tuneOut").textContent = ev.output;
     card.querySelector(".tunePrompt").textContent = ev.prompt || "";
-    renderTuneTabs(card, ev.id);
   } else if (ev.type === "done") {
     $("tuneStatus").textContent = "완료 ✓";
   } else if (ev.type === "error") {
