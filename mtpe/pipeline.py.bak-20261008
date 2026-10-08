@@ -48,41 +48,7 @@ def _pick_translation_field(data):
             return v
     if isinstance(data.get("translation"), str):
         return data["translation"]
-    for k in ("translated_text", "translated", "target_text", "target", "output", "result", "text", "final"):
-        if isinstance(data.get(k), str) and data[k].strip():
-            return data[k]
     return None
-
-
-def _lenient_json(text: str):
-    """모델이 틀을 조금 어겨도 JSON 객체를 찾아 파싱한다. 실패 시 None.
-    - 앞뒤 설명 문장 / ```json 펜스 / 끝 쉼표 / 중괄호 바깥 잡문 허용."""
-    if not text:
-        return None
-    t = text.strip()
-    # 코드펜스 제거
-    t = re.sub(r"^```[a-zA-Z]*\s*", "", t).strip()
-    t = re.sub(r"\s*```$", "", t).strip()
-    # 첫 { ~ 마지막 } 범위만
-    i, j = t.find("{"), t.rfind("}")
-    if i < 0 or j <= i:
-        return None
-    cand = t[i:j + 1]
-    for attempt in (cand, re.sub(r",\s*([}\]])", r"\1", cand)):  # 끝 쉼표 제거 재시도
-        try:
-            return json.loads(attempt)
-        except Exception:  # noqa: BLE001
-            continue
-    # 줄바꿈이 문자열 안에 그대로 들어간 경우(비표준) → 이스케이프 후 재시도
-    try:
-        fixed = re.sub(r'(?<!\\)\n', '\\n', cand)
-        return json.loads(fixed)
-    except Exception:  # noqa: BLE001
-        return None
-
-
-class ExtractError(RuntimeError):
-    """출력 형식 불일치로 번역문을 꺼내지 못함."""
 
 
 def _auto_clean(text: str) -> str:
@@ -125,28 +91,29 @@ def extract_output(text: str, rule: str | None) -> str:
         return _auto_clean(text)
     if rule.startswith("tag:"):
         tag = rule.split(":", 1)[1].strip()
-        m = re.search(rf"<\s*{tag}\s*>(.*?)<\s*/\s*{tag}\s*>", text, re.S | re.I)
+        m = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.S)
         return m.group(1).strip() if m else text.strip()
     if rule.startswith("json:"):
         field = rule.split(":", 1)[1].strip()
-        m = re.search(r"<o>(.*?)</o>", text, re.S | re.I)
-        inner = (m.group(1) if m else text).strip()
-        data = _lenient_json(inner)
-        if data is None and m is None:
-            data = _lenient_json(text)
-        if isinstance(data, dict):
+        inner = text
+        m = re.search(r"<o>(.*?)</o>", text, re.S)
+        if m:
+            inner = m.group(1)
+        inner = inner.strip()
+        if inner.startswith("```"):  # 코드펜스 제거
+            inner = inner.strip("`")
+            if "{" in inner and "}" in inner:
+                inner = inner[inner.find("{"): inner.rfind("}") + 1]
+        try:
+            data = json.loads(inner)
             val = data.get(field)
-            if isinstance(val, str) and val.strip():
+            if isinstance(val, str):
                 return val.strip()
-            if val is not None and not isinstance(val, (dict, list)):
+            if val is not None:
                 return str(val)
-            alt = _pick_translation_field(data)   # 필드 이름이 다를 때
-            if isinstance(alt, str) and alt.strip():
-                return alt.strip()
-        # JSON 이 아니고 <o> 안에 평문 번역이 들어 있으면 그걸 사용
-        if m and inner and not inner.lstrip().startswith("{"):
-            return inner
-        raise ExtractError(f"출력 형식 불일치: '{field}' 필드를 찾지 못함 (응답 앞부분: {text.strip()[:80]!r})")
+        except Exception:  # noqa: BLE001
+            pass
+        return (m.group(1).strip() if m else text.strip())  # 실패 시 원본 유지
     return text
 
 
@@ -364,15 +331,8 @@ class Pipeline:
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
                 )
-                try:
-                    output = extract_output(raw, step.extract)
-                    err = ""
-                except ExtractError as _xe:
-                    from .logbuf import log as _log
-                    _log(f"⚠ 추출 실패  {model} · STEP{step.id} · {str(_xe)[:160]}")
-                    output = last_nonempty
-                    err = (f"이 단계 출력이 정해진 형식과 달라 번역문을 꺼내지 못했습니다. 직전 단계 결과를 사용합니다. "
-                           f"('이 단계부터 다시'로 재시도) — {str(_xe)[:120]}")
+                output = extract_output(raw, step.extract)
+                err = ""
                 # 마지막 단계가 번역문 대신 '분석/검사 결과'를 내놓은 경우 → 직전 정상 결과로 대체
                 if step.is_final and last_nonempty and _looks_like_analysis(output):
                     err = ("마지막 단계가 번역문 대신 분석 결과를 반환해, 직전 단계 번역문을 최종본으로 사용했습니다. "
