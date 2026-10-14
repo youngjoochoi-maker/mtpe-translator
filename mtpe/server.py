@@ -1008,7 +1008,9 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
             _log(f"■ 실행 시작 · {total}회차 · 동시 {workers}개 · {model}")
             import re as _re_zip
             safe_work = _re_zip.sub(r'[\\/:*?"<>|]', "", str(work)).strip() or "WORK"
-            out_root = _work_dir(work) / "output"
+            run_tag = _run_tag(model)
+            out_root = _work_dir(work) / "output" / run_tag
+            out_root.mkdir(parents=True, exist_ok=True)
 
             q: "_queue.Queue" = _queue.Queue()
             lock = _threading.Lock()
@@ -1057,7 +1059,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                     except Exception as _e:  # noqa: BLE001 — 이전 결과 파일이 열려 있어 잠긴 경우
                         _log(f"⚠ final.txt 저장 실패(파일 열려 있음?) · {str(_e)[:120]} — 결과는 화면에 표시됨")
                     # 완료 즉시 Word(.docx) 자동 저장 — 창을 닫아도 결과가 남도록
-                    doc_name = f"{safe_work}_{Path(eid).stem}.docx"
+                    doc_name = f"{safe_work}_{Path(eid).stem}_{run_tag.split('_',2)[0]}_{run_tag.split('_',2)[1]}.docx"
                     try:
                         import docx as _docx
                         _d = _docx.Document()
@@ -1107,7 +1109,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
             auto = {"dir": str(out_root), "files": [], "zip": None}
             for _i, _stem, _fname, _ in saved_docs:
                 auto["files"].append({"name": _fname,
-                    "url": f"/api/export-docx-download?work={quote(work)}&episode={quote(_stem)}&name={quote(_fname)}"})
+                    "url": f"/api/export-docx-download?work={quote(work)}&episode={quote(run_tag + '/' + _stem)}&name={quote(_fname)}"})
             if len(saved_docs) >= 2:
                 try:
                     import zipfile as _zip
@@ -1118,7 +1120,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                             if Path(_fpath).exists():
                                 zf.write(_fpath, arcname=_fname)
                     auto["zip"] = {"name": zip_name,
-                        "url": f"/api/export-zip-download?work={quote(work)}&name={quote(zip_name)}"}
+                        "url": f"/api/export-zip-download?work={quote(work)}&name={quote(run_tag + '/' + zip_name)}"}
                 except Exception:
                     auto["zip"] = None
             _log(f"■ 실행 종료 · 완료 {len(saved_docs)}/{total} · 실제 {wall:.0f}초")
@@ -1295,7 +1297,7 @@ def automate_translate(request: Request, payload: dict = Body(...)) -> JSONRespo
 
     saved = None
     if episode and payload.get("save", True):
-        outd = _work_dir(work) / "output" / Path(episode).stem
+        outd = _work_dir(work) / "output" / _run_tag(payload.get("model") or "") / Path(episode).stem
         outd.mkdir(parents=True, exist_ok=True)
         (outd / "final.txt").write_text(final, encoding="utf-8")
         saved = str(outd / "final.txt")
@@ -1330,6 +1332,33 @@ def _safe_name(s: str) -> str:
 
 def _batch_ep_dir(work: str, batch: str) -> Path:
     return _work_dir(work) / "episodes" / _safe_seg(batch)
+
+
+
+def _run_tag(model: str) -> str:
+    """실행 단위 폴더명: 20261013_1432_gpt-5.6 (모델명은 파일명에 안전한 문자만)."""
+    import re as _r
+    from datetime import datetime as _dt
+    m = _r.sub(r"[^A-Za-z0-9.\-]+", "-", (model or "model").split("/")[-1]).strip("-")[:40]
+    return f"{_dt.now():%Y%m%d_%H%M}_{m}"
+
+
+def _latest_episode_dir(work: str, stem: str) -> Path | None:
+    """output/<실행폴더>/<회차> 중 가장 최근 실행의 회차 폴더. 구버전 output/<회차> 도 폴백."""
+    root = _work_dir(work) / "output"
+    if not root.is_dir():
+        return None
+    cands = []
+    for d in root.iterdir():
+        if d.is_dir():
+            ep = d / stem
+            if ep.is_dir() and (ep / "final.txt").exists():
+                cands.append(ep)
+    if cands:
+        # 실행 폴더명이 YYYYmmdd_HHMM 로 시작하므로 이름 정렬이 곧 시간 순(동률·mtime 오차 방지)
+        return max(cands, key=lambda d: (d.parent.name, d.stat().st_mtime))
+    legacy = root / stem
+    return legacy if (legacy / "final.txt").exists() else None
 
 
 def _batch_out_dir(work: str, batch: str) -> Path:
@@ -1865,7 +1894,8 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "회차 원문을 찾을 수 없습니다."}, status_code=400)
     source = read_text(str(ep_path))
 
-    final_path = _work_dir(work) / "output" / Path(episode).stem / "final.txt"
+    _epd = _latest_episode_dir(work, Path(episode).stem)
+    final_path = (_epd / "final.txt") if _epd else (_work_dir(work) / "output" / Path(episode).stem / "final.txt")
     if not final_path.exists():
         return JSONResponse({"ok": False,
             "error": "이 회차의 번역 결과(final.txt)가 없습니다. 먼저 번역하세요."}, status_code=400)
@@ -1959,24 +1989,34 @@ def export_docx(payload: dict = Body(...)) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "작품/회차가 필요합니다."}, status_code=400)
     stem = Path(episode).stem
     safe_work = _re.sub(r'[\\/:*?"<>|]', "", str(work)).strip() or "WORK"
-    fname = f"{safe_work}_{stem}.docx"
+    from datetime import datetime as _dt
+    fname = f"{safe_work}_{stem}_{_dt.now():%Y%m%d_%H%M}.docx"
     try:
-        out_dir = _work_dir(work) / "output" / _safe_seg(stem)
+        out_dir = _latest_episode_dir(work, _safe_seg(stem)) or (_work_dir(work) / "output" / _run_tag("manual") / _safe_seg(stem))
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     out_dir.mkdir(parents=True, exist_ok=True)
     doc = docx.Document()
     _add_doc_paragraphs(doc, text, lang=payload.get("lang"), work=work, episode=stem)
     doc.save(str(out_dir / fname))
+    rel = out_dir.relative_to(_work_dir(work) / "output").as_posix()
     return JSONResponse({"ok": True, "filename": fname, "dir": str(out_dir),
-        "url": f"/api/export-docx-download?work={quote(work)}&episode={quote(stem)}&name={quote(fname)}"})
+        "url": f"/api/export-docx-download?work={quote(work)}&episode={quote(rel)}&name={quote(fname)}"})
 
 
 @app.get("/api/export-docx-download")
 def export_docx_download(work: str, episode: str, name: str):
     """생성된 최종 결과 Word 파일 다운로드."""
     try:
-        fp = _work_dir(work) / "output" / _safe_seg(episode) / _safe_seg(name)
+        parts = [_safe_seg(p) for p in str(episode).split("/") if p]
+        fp = _work_dir(work) / "output"
+        for p in parts:
+            fp = fp / p
+        fp = fp / _safe_seg(name)
+        if not fp.exists():  # 구경로/최신 실행 폴백
+            d = _latest_episode_dir(work, parts[-1]) if parts else None
+            if d and (d / _safe_seg(name)).exists():
+                fp = d / _safe_seg(name)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     if not fp.exists():
@@ -2034,7 +2074,9 @@ def export_zip(payload: dict = Body(...)) -> JSONResponse:
 def export_zip_download(work: str, name: str):
     """생성된 배치 ZIP 파일 다운로드."""
     try:
-        fp = _work_dir(work) / "output" / _safe_seg(name)
+        fp = _work_dir(work) / "output"
+        for p in [x for x in str(name).split("/") if x]:
+            fp = fp / _safe_seg(p)
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     if not fp.exists() or fp.suffix.lower() != ".zip":

@@ -503,8 +503,11 @@ async function downloadText(filename, text) {
 }
 async function copyText(text) {
   if (isNativeApp() && window.pywebview.api && window.pywebview.api.copy_text) {
-    try { await window.pywebview.api.copy_text(text || ""); toast("복사됨"); return; }
-    catch (e) { /* 아래로 폴백 */ }
+    try {
+      const r = await window.pywebview.api.copy_text(text || "");
+      if (r && r.ok) { toast("복사됨"); return; }
+      // ok:false → 아래 브라우저 클립보드로 폴백
+    } catch (e) { /* 아래로 폴백 */ }
   }
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {

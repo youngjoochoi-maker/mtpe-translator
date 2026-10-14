@@ -91,7 +91,7 @@ class _DesktopApi:
             ps = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
                   f"$t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{b64}'));"
                   "Set-Clipboard -Value $t")
-            cmds = [["powershell", "-NoProfile", "-Command", ps]]
+            cmds = [["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps]]
         else:
             cmds = [["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"]]
         for cmd in cmds:
