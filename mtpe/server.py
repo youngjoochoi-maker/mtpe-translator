@@ -1451,7 +1451,12 @@ async def automate_tb(request: Request, work: str = Form(...), file: UploadFile 
             if f.is_file():
                 f.unlink()
     d.mkdir(parents=True, exist_ok=True)
-    (d / name).write_bytes(await file.read())
+    data = await file.read()
+    # 구글 드라이브 내보내기 등으로 확장자가 없을 때 xlsx 로 보정 (ZIP 매직바이트 PK\x03\x04).
+    # 확장자가 없으면 _read_tb_text 가 텍스트로 읽어 UnicodeDecodeError 가 남.
+    if not name.lower().endswith((".xlsx", ".xlsm", ".xls")) and data[:4] == b"PK\x03\x04":
+        name = name + ".xlsx"
+    (d / name).write_bytes(data)
     cfg = _read_lib_cfg(work)
     sheets_all = _tb_sheets(d / name)
     want = [s.strip() for s in (tb_sheets or "").split(",") if s.strip()]
