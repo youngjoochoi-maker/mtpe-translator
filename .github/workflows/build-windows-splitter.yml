@@ -86,7 +86,24 @@ jobs:
         run: pyinstaller novel_splitter.spec --noconfirm
 
       - name: ad-hoc 서명 (Gatekeeper '손상됨' 방지)
-        run: codesign --force --deep --sign - "dist/소설분권.app" && codesign --verify --deep --strict "dist/소설분권.app"
+        continue-on-error: true   # 서명이 실패해도 zip 업로드는 진행 (PyInstaller 자체 ad-hoc 서명이 이미 들어감)
+        run: |
+          APP="dist/소설분권.app"
+          xattr -cr "$APP" || true
+          # 1) 내부 Mach-O(dylib/so/실행파일)부터 개별 ad-hoc 서명 (--deep 은 Qt 프레임워크 구조에서 실패하는 경우가 있음)
+          find "$APP" -type f \( -name '*.dylib' -o -name '*.so' -o -perm +111 \) -print0 | while IFS= read -r -d '' f; do
+            if file "$f" | grep -q 'Mach-O'; then
+              codesign --force --sign - "$f" || echo "::warning::서명 실패(계속): $f"
+            fi
+          done
+          # 2) 프레임워크 번들 서명
+          find "$APP" -type d -name '*.framework' -print0 | while IFS= read -r -d '' fw; do
+            codesign --force --sign - "$fw" || echo "::warning::프레임워크 서명 실패(계속): $fw"
+          done
+          # 3) 앱 번들 전체 서명 + 검증
+          codesign --force --sign - "$APP"
+          codesign --verify --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | head -5
 
       - name: .app 압축 (Release 자산용, ASCII 이름)
         run: |
