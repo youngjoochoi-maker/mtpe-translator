@@ -85,6 +85,9 @@ jobs:
       - name: 빌드 (.app)
         run: pyinstaller novel_splitter.spec --noconfirm
 
+      - name: ad-hoc 서명 (Gatekeeper '손상됨' 방지)
+        run: codesign --force --deep --sign - "dist/소설분권.app" && codesign --verify --deep --strict "dist/소설분권.app"
+
       - name: .app 압축 (Release 자산용, ASCII 이름)
         run: |
           ls -la dist/

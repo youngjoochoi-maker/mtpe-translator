@@ -84,7 +84,7 @@ else:
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
-        upx=True,
+        upx=False,  # macOS: UPX 압축은 Mach-O 서명을 깨뜨려 '손상됨' 오류 유발
         console=False,           # GUI 앱 (콘솔 창 없음)
         disable_windowed_traceback=False,
         argv_emulation=False,    # LaunchServices(더블클릭) 실행 시 조기 종료 방지
@@ -98,7 +98,7 @@ else:
         a.binaries,
         a.datas,
         strip=False,
-        upx=True,
+        upx=False,  # macOS: UPX 압축은 Mach-O 서명을 깨뜨려 '손상됨' 오류 유발
         upx_exclude=[],
         name="소설분권",
     )
