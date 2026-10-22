@@ -7,13 +7,15 @@
 # 앱은 서버를 백그라운드로 띄우고 네이티브 창(pywebview)으로 UI 를 연다.
 # pywebview 백엔드 로딩이 실패하면 자동으로 기본 브라우저로 대체된다(desktop.py).
 
+import sys
 from PyInstaller.utils.hooks import collect_all
+
+IS_WINDOWS = sys.platform == 'win32'
 
 # 번들에 포함할 읽기전용 리소스
 datas = [
     ('config.yaml', '.'),
     ('mtpe/web', 'mtpe/web'),
-    ('prompts', 'prompts'),
 ]
 binaries = []
 hiddenimports = [
@@ -50,19 +52,54 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.datas,
-    [],
-    name='MTPE',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    runtime_tmpdir=None,
-    console=True,             # 첫 빌드 디버깅용(오류 확인). 정상 확인 후 False 로 바꾸세요.
-    disable_windowed_traceback=False,
-    icon='MTPE.ico',
-)
+if IS_WINDOWS:
+    # Windows: 단일 exe
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name='MTPE',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        runtime_tmpdir=None,
+        console=True,             # 첫 빌드 디버깅용(오류 확인). 정상 확인 후 False 로 바꾸세요.
+        disable_windowed_traceback=False,
+        icon='MTPE.ico',
+    )
+else:
+    # macOS: onedir + .app 번들
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='MTPE',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=False,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+    )
+    coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='MTPE')
+    app = BUNDLE(
+        coll,
+        name='MTPE.app',
+        icon=None,
+        bundle_identifier='com.voithru.mtpe',
+        info_plist={
+            'CFBundleName': 'MTPE',
+            'CFBundleDisplayName': 'MT추출 (MTPE)',
+            'NSHighResolutionCapable': True,
+            # pywebview 가 WebKit 창을 쓰므로 네트워크(로컬 서버) 허용
+            'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True},
+        },
+    )

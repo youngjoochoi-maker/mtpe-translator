@@ -11,7 +11,6 @@ from PyInstaller.utils.hooks import collect_all
 datas = [
     ('config.yaml', '.'),
     ('mtpe/web', 'mtpe/web'),
-    ('prompts', 'prompts'),
 ]
 binaries = []
 hiddenimports = [
