@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build MTPE (Windows EXE + macOS app)
 
 # 윈도우 PC 없이도 GitHub 가 윈도우에서 .exe 를 자동 빌드합니다.
 # 트리거: 수동 실행(Actions 탭의 Run workflow) 또는 v* 태그 푸시
@@ -51,3 +51,43 @@ jobs:
           files: |
             dist/MTPE.exe
             dist/MTPEApi.exe
+
+  # ── macOS .app (같은 태그로 Release 에 함께 첨부) ──
+  build-mac:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 빌드 — 데스크톱 앱 (.app)
+        run: pyinstaller mtpe.spec --noconfirm
+
+      - name: .app 압축 (Release 자산용, ASCII 이름)
+        run: |
+          ls -la dist/
+          cd dist && ditto -c -k --keepParent "MTPE.app" "MTPE-mac.zip"
+
+      - name: 아티팩트 업로드 (.app)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MTPE-mac
+          path: dist/MTPE-mac.zip
+
+      - name: Release 첨부
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MTPE-mac.zip

@@ -1,0 +1,63 @@
+name: Build 소설분권 Windows EXE
+
+# 윈도우 PC 없이도 GitHub 가 윈도우에서 소설 분권 프로그램 .exe 를 자동 빌드합니다.
+# (PyInstaller 는 크로스 컴파일이 불가하여 반드시 Windows 에서 빌드해야 함)
+#
+# 트리거: 수동 실행(Actions 탭의 Run workflow) 또는 splitter-v* 태그 푸시
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'splitter-v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    # 저장소 기본 워크플로 권한이 'read' 라서, Release 생성을 위해
+    # contents: write 를 이 워크플로에만 명시적으로 부여한다.
+    # (없으면 Release 첨부 단계가 "Resource not accessible by integration" 로 실패)
+    permissions:
+      contents: write
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 분권 프로그램에 필요한 것만 설치(전체 requirements.txt 는 불필요하게 무거움)
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 python-docx openpyxl
+          pip install pyinstaller
+
+      - name: 빌드 (PyInstaller)
+        run: pyinstaller novel_splitter.spec --noconfirm
+
+      - name: 빌드 산출물 확인
+        shell: bash
+        run: ls -lh dist/
+
+      - name: 아티팩트 업로드 (.exe 다운로드)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 소설분권-windows
+          path: dist/소설분권.exe
+          if-no-files-found: error
+
+      # Release 첨부용 사본을 ASCII 이름으로 만든다.
+      # (한글 파일명을 그대로 올리면 Release 자산명이 'default.exe' 로 깨짐)
+      - name: Release용 사본 준비
+        if: startsWith(github.ref, 'refs/tags/splitter-v')
+        shell: bash
+        run: cp "dist/소설분권.exe" "dist/NovelSplitter.exe"
+
+      # 태그(splitter-v*) 푸시면 Release 에도 첨부
+      - name: Release 첨부
+        if: startsWith(github.ref, 'refs/tags/splitter-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/NovelSplitter.exe

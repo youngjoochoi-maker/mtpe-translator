@@ -1,4 +1,4 @@
-name: Build 소설분권 Windows EXE
+name: Build 소설분권 (Windows EXE + macOS app)
 
 # 윈도우 PC 없이도 GitHub 가 윈도우에서 소설 분권 프로그램 .exe 를 자동 빌드합니다.
 # (PyInstaller 는 크로스 컴파일이 불가하여 반드시 Windows 에서 빌드해야 함)
@@ -61,3 +61,43 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/NovelSplitter.exe
+
+  # ── macOS .app (같은 태그로 Release 에 함께 첨부) ──
+  build-mac:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 python-docx openpyxl
+          pip install pyinstaller
+
+      - name: 빌드 (.app)
+        run: pyinstaller novel_splitter.spec --noconfirm
+
+      - name: .app 압축 (Release 자산용, ASCII 이름)
+        run: |
+          ls -la dist/
+          cd dist && ditto -c -k --keepParent "소설분권.app" "NovelSplitter-mac.zip"
+
+      - name: 아티팩트 업로드 (.app)
+        uses: actions/upload-artifact@v4
+        with:
+          name: NovelSplitter-mac
+          path: dist/NovelSplitter-mac.zip
+
+      - name: Release 첨부
+        if: startsWith(github.ref, 'refs/tags/splitter-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/NovelSplitter-mac.zip
