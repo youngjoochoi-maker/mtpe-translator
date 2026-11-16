@@ -89,27 +89,35 @@ def _auto_clean(text: str) -> str:
     """출력 추출 규칙이 없을 때의 안전망.
     출력이 <o>{JSON}</o> / ```json / JSON 형태이고 번역문 필드가 있으면 그 값만 깔끔히 반환한다
     (JSON 이스케이프 \n 이 실제 줄바꿈으로 복원됨). 그 외 일반 텍스트는 원문 그대로 통과.
-    → 번들에 추출 규칙이 없어도 JSON 껍데기가 새는 '서식 오류'를 어떤 언어에서든 막는다."""
+    → 번들에 추출 규칙이 없어도 JSON 껍데기가 새는 '서식 오류'를 어떤 언어에서든 막는다.
+    닫는 </o> 가 빠졌거나 태그가 대문자(<O>)여도 동작한다(모델이 종종 닫는 태그를 빠뜨림)."""
     if not text or not text.strip():
         return text
-    m = re.search(r"<o>(.*?)</o>", text, re.S)
-    inner = (m.group(1) if m else text).strip()
+    # <o>…</o> 래퍼 제거: 대소문자 무관(re.I), 닫는 태그가 없어도 여는 태그만이라도 벗긴다
+    m = re.search(r"<\s*o\s*>(.*?)<\s*/\s*o\s*>", text, re.S | re.I)
+    if m:
+        inner = m.group(1).strip()
+        wrapped = True
+    else:
+        stripped = re.sub(r"^\s*<\s*o\s*>", "", text, flags=re.I)
+        stripped = re.sub(r"<\s*/\s*o\s*>\s*$", "", stripped, flags=re.I).strip()
+        wrapped = stripped != text.strip()
+        inner = stripped
     cand = inner
     if cand.startswith("```"):
         cand = cand.strip("`").strip()
         if cand[:4].lower() == "json":
             cand = cand[4:].strip()
-    if cand.startswith("{") and cand.rstrip().endswith("}"):
-        try:
-            data = json.loads(cand)
+    # JSON(또는 앞뒤 잡텍스트가 붙은 JSON)이면 번역문 필드만 깔끔히 꺼낸다.
+    # _lenient_json 은 { ~ } 범위를 스스로 찾고 끝쉼표/비표준 줄바꿈까지 보정한다.
+    if cand.lstrip().startswith("{"):
+        data = _lenient_json(cand)
+        if isinstance(data, dict):
             val = _pick_translation_field(data)
             if isinstance(val, str):
                 return val.strip()
-        except Exception:  # noqa: BLE001
-            pass
-    if m:  # JSON 은 아니지만 <o> 래퍼가 있으면 래퍼만 제거
-        return inner
-    return text
+    # JSON 이 아니면: 래퍼를 벗긴 경우 벗긴 결과를, 아니면 원문 그대로 통과
+    return inner if wrapped else text
 
 
 def extract_output(text: str, rule: str | None) -> str:
