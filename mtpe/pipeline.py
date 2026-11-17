@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 
 from .bundle import Bundle, Step, load_bundle
-from .llm import EmptyResponseError, call_llm
+from .llm import EmptyResponseError, TruncatedResponseError, call_llm
 
 _SEP = "─" * 28
 
@@ -365,6 +365,7 @@ class Pipeline:
         self.final_output = ""
         last_output = ""
         last_nonempty = ""  # 빈 응답/빈 단계 시 최종을 직전 정상 결과로 대체하기 위함
+        truncated_ids: list[int] = []  # 길이 제한으로 끝에서 잘린 단계들(경고 배너용)
 
         for step in self.bundle.steps:
             if start_from and step.id < start_from:
@@ -417,6 +418,18 @@ class Pipeline:
                     err = ("마지막 단계가 번역문 대신 분석 결과를 반환해, 직전 단계 번역문을 최종본으로 사용했습니다. "
                            "(이 단계부터 다시 실행하면 재시도)")
                     output = last_nonempty
+            except TruncatedResponseError as exc:
+                # 끝에서 잘렸지만 받은 데까지(부분 번역)는 살린다. 껍데기는 벗겨 본문만.
+                raw = exc.partial or ""
+                try:
+                    output = extract_output(raw, step.extract)
+                except ExtractError:
+                    output = _auto_clean(raw)
+                if not (output or "").strip():
+                    output = last_nonempty
+                truncated_ids.append(step.id)
+                err = (f"이 회차는 너무 길어 모델 출력이 끝에서 잘렸습니다(STEP{step.id}). "
+                       "번역 끝부분이 빠졌을 수 있어요. max_tokens 를 늘리거나 회차를 나눠 다시 실행하세요.")
             except EmptyResponseError as exc:
                 raw, output, err = "", last_nonempty, str(exc)
             _sec = time.time() - _t0
@@ -439,6 +452,16 @@ class Pipeline:
         # 최종이 비었으면(마지막 단계가 빈 응답·빈 프롬프트였던 경우) 직전 정상 결과로 대체
         if not self.final_output.strip():
             self.final_output = last_nonempty or last_output
+        # 어느 단계든 길이 제한으로 잘렸으면, 저장 파일(final.txt·docx)에서도 놓치지 않도록
+        # 최종 결과 맨 위에 눈에 띄는 경고 한 줄을 붙인다.
+        if truncated_ids and self.final_output.strip():
+            tag = ", ".join(f"STEP{i}" for i in sorted(set(truncated_ids)))
+            self.final_output = (
+                f"⚠️ [자동경고] 이 회차는 분량이 많아 모델 출력이 끝에서 잘렸습니다({tag}). "
+                "번역 끝부분이 빠졌을 수 있으니 max_tokens 를 늘리거나 회차를 나눠 다시 실행해 확인하세요. "
+                "— 확인 후 이 줄은 지워도 됩니다.\n\n"
+                + self.final_output
+            )
 
     def run(
         self,

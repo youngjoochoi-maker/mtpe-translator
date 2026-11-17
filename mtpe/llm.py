@@ -11,6 +11,15 @@ class ModelRefusalError(RuntimeError):
     """모델이 요청 자체를 거부(안전 필터). 거부 문장을 결과로 흘려보내지 않고 회차를 중단한다."""
 
 
+class TruncatedResponseError(RuntimeError):
+    """모델 출력이 길이 제한에 걸려 '끝에서 잘림'(내용은 있으나 불완전).
+    받은 데까지는 partial 에 담아, 호출측(파이프라인)이 부분 번역은 살리되 크게 경고하도록 한다."""
+
+    def __init__(self, message: str, partial: str = ""):
+        super().__init__(message)
+        self.partial = partial
+
+
 import re as _re
 _REFUSAL_RE = _re.compile(
     r"^\s*(I'm sorry|I am sorry|Sorry)[,.]?\s*(but\s+)?I (can't|cannot|can not|won't|am unable to)\s+(assist|help|comply|provide|fulfill|do that)"
@@ -98,6 +107,15 @@ def call_llm(
             f"모델이 빈 응답을 반환했습니다 (finish_reason={fr}). "
             "출력 토큰 한도 초과거나 안전필터 차단일 수 있어요. "
             "max_tokens 를 늘리거나 회차를 나눠 다시 시도해 보세요."
+        )
+    # 내용은 있지만 길이 제한에 걸려 '끝에서 잘린' 경우(finish_reason=length/max_tokens 등).
+    # 그대로 통과시키면 반 토막 번역이 조용히 최종본이 되므로, 부분 내용을 담아 경고 예외를 던진다.
+    _frl = str(_fr).lower()
+    if "length" in _frl or "max_token" in _frl or "max_output" in _frl:
+        _log(f"⚠ 잘림  {model} · 출력이 max_tokens({max_tokens}) 한도에 걸려 끝에서 잘림(finish={_fr})")
+        raise TruncatedResponseError(
+            f"출력이 길이 제한(max_tokens={max_tokens})에 걸려 끝에서 잘렸습니다 (finish_reason={_fr}).",
+            partial=content,
         )
     return content
 
