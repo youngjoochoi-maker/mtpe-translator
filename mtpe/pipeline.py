@@ -56,29 +56,60 @@ def _pick_translation_field(data):
 
 def _lenient_json(text: str):
     """모델이 틀을 조금 어겨도 JSON 객체를 찾아 파싱한다. 실패 시 None.
-    - 앞뒤 설명 문장 / ```json 펜스 / 끝 쉼표 / 중괄호 바깥 잡문 허용."""
+    - 앞뒤 설명 문장 / ```json 펜스 / 끝 쉼표 / 중괄호 바깥 잡문 허용.
+    - 닫는 중괄호가 없거나 값이 중간에서 잘려도(모델이 </o>·}·닫는 따옴표를 빠뜨림) 복구 시도."""
     if not text:
         return None
     t = text.strip()
     # 코드펜스 제거
     t = re.sub(r"^```[a-zA-Z]*\s*", "", t).strip()
     t = re.sub(r"\s*```$", "", t).strip()
-    # 첫 { ~ 마지막 } 범위만
-    i, j = t.find("{"), t.rfind("}")
-    if i < 0 or j <= i:
+    i = t.find("{")
+    if i < 0:
         return None
-    cand = t[i:j + 1]
-    for attempt in (cand, re.sub(r",\s*([}\]])", r"\1", cand)):  # 끝 쉼표 제거 재시도
-        try:
-            return json.loads(attempt)
-        except Exception:  # noqa: BLE001
-            continue
-    # 줄바꿈이 문자열 안에 그대로 들어간 경우(비표준) → 이스케이프 후 재시도
+    j = t.rfind("}")
+    cands = []
+    if j > i:                                   # 정상: 첫 { ~ 마지막 } 범위
+        cand = t[i:j + 1]
+        cands += [cand, re.sub(r",\s*([}\]])", r"\1", cand)]  # 끝 쉼표 제거 재시도
+    # 잘린 객체 복구: 닫는 } 또는 "} 를 붙여본다(값이 중간에서 끊긴 경우 포함).
+    tail = t[i:].rstrip()
+    cands += [tail + "}", tail + '"}', tail.rstrip(",") + "}"]
+    for base in cands:
+        # 그대로, 그리고 문자열 안 생줄바꿈을 이스케이프한 버전 둘 다 시도
+        for attempt in (base, re.sub(r'(?<!\\)\n', r'\\n', base)):
+            try:
+                return json.loads(attempt)
+            except Exception:  # noqa: BLE001
+                continue
+    return None
+
+
+def _salvage_translation_field(text: str):
+    """닫히지 않은/깨진 JSON 에서도 '번역문' 필드 값만 직접 건져낸다(최후 수단).
+    JSON 파싱이 끝내 실패할 때, "...translation": "..." 모양을 정규식으로 찾아
+    따옴표 안 내용을 이스케이프 해제해 돌려준다. 못 찾으면 None."""
+    m = re.search(
+        r'"(?:[a-z_]*translation|translated_text|translated|target_text|target|final|output|result|text)"\s*:\s*"',
+        text, re.I)
+    if not m:
+        return None
+    rest = text[m.end():]
+    buf, k = [], 0
+    while k < len(rest):                         # 이스케이프를 존중하며 닫는 따옴표까지 읽는다
+        c = rest[k]
+        if c == "\\" and k + 1 < len(rest):
+            buf.append(rest[k:k + 2]); k += 2; continue
+        if c == '"':
+            break
+        buf.append(c); k += 1
+    raw = "".join(buf)
     try:
-        fixed = re.sub(r'(?<!\\)\n', '\\n', cand)
-        return json.loads(fixed)
+        val = json.loads('"' + raw + '"')       # 표준 JSON 이스케이프 해제
     except Exception:  # noqa: BLE001
-        return None
+        val = (raw.replace('\\n', '\n').replace('\\t', '\t')
+                  .replace('\\"', '"').replace('\\\\', '\\'))
+    return val.strip() if val and val.strip() else None
 
 
 class ExtractError(RuntimeError):
@@ -101,6 +132,11 @@ def _auto_clean(text: str) -> str:
         val = _pick_translation_field(data)
         if isinstance(val, str) and val.strip():
             return val.strip()
+    # 1-b) JSON 복구조차 실패(심하게 잘림)해도, 번역문 필드만 정규식으로 직접 건져본다.
+    if "{" in text and re.search(r'"[a-z_]*(?:translation|target|output|result|text|final)"\s*:', text, re.I):
+        sv = _salvage_translation_field(text)
+        if sv:
+            return sv
     # 2) JSON 이 아니면 래퍼/코드펜스만 제거해 통과(평문 번역이 <o> 안에 든 경우 등).
     m = re.search(r"<\s*o\s*>(.*?)<\s*/\s*o\s*>", text, re.S | re.I)
     if m:
@@ -145,6 +181,10 @@ def extract_output(text: str, rule: str | None) -> str:
         # JSON 이 아니고 <o> 안에 평문 번역이 들어 있으면 그걸 사용
         if m and inner and not inner.lstrip().startswith("{"):
             return inner
+        # 심하게 잘린 JSON 이면 번역문 필드만 직접 건져 마지막으로 구제
+        sv = _salvage_translation_field(text)
+        if sv:
+            return sv
         raise ExtractError(f"출력 형식 불일치: '{field}' 필드를 찾지 못함 (응답 앞부분: {text.strip()[:80]!r})")
     return text
 
