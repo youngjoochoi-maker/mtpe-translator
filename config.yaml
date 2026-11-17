@@ -16,8 +16,9 @@ default_version: null        # null => 최신(latest) 버전 자동 선택
 # API 키는 환경변수: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY
 default_model: gemini/gemini-3.1-pro-preview
 temperature: 0.3
-# gemini-2.5 등 추론(thinking) 모델은 내부 사고에 토큰을 써서, 한도가 낮으면 본문이 0자로 나올 수 있음 → 넉넉히
-max_tokens: 32768
+# gemini-2.5/3.x 등 추론(thinking) 모델은 내부 사고에 토큰을 써서, 한도가 낮으면 본문이 끝에서 잘릴 수 있음 → 넉넉히.
+# Gemini 3.1 Pro 출력 상한이 65536 이라 그 끝까지 사용(만 자 연재 등 초장편 회차 잘림 방지).
+max_tokens: 65536
 
 # 동시에 번역할 회차 수(1~6). 한 회차 안의 단계는 순차. 제약은 PC 성능이 아니라 모델 API 분당 한도(429)
 # → 429 가 잦으면 낮추고, 한도가 넉넉하면 올림. UI 에서 실행할 때마다 바꿀 수도 있음.
