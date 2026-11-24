@@ -14,6 +14,15 @@ import yaml
 
 _VER_NUM = re.compile(r"(\d+)")
 
+# 언어쌍 표기: ISO 639-1 언어 코드 사용(일본어 = ja). jp 는 국가 코드라 구표기로만 허용.
+LANG_ALIASES = {"ko-jp": "ko-ja"}
+
+
+def normalize_lang(lang: str | None) -> str:
+    """언어쌍을 표준 표기로(소문자, 구표기 ko-jp → ko-ja)."""
+    s = (lang or "").strip().lower().replace("_", "-")
+    return LANG_ALIASES.get(s, s)
+
 
 @dataclass
 class Step:
@@ -102,6 +111,20 @@ def resolve_version(lang_dir: Path, version: str | None) -> Path:
     return max(versions, key=lambda p: _version_key(p.name))
 
 
+def _set_models(meta_path: Path) -> list[str]:
+    """meta.yaml 의 단계별 지정 모델 목록(순서 유지·중복 제거). 지정이 없으면 []."""
+    try:
+        meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[str] = []
+    for st in meta.get("steps") or []:
+        m = (st or {}).get("model")
+        if m and m not in out:
+            out.append(m)
+    return out
+
+
 def list_bundles(prompts_root: str | Path) -> list[dict]:
     """prompts_root 를 스캔해 작품→언어→버전 목록을 반환한다(UI 드롭다운용)."""
     root = Path(prompts_root)
@@ -118,7 +141,9 @@ def list_bundles(prompts_root: str | Path) -> list[dict]:
                 reverse=True,
             )
             if versions:
-                langs.append({"lang": lang_dir.name, "versions": versions})
+                # 버전별 지정 모델(meta.yaml 단계별 model, 중복 제거) — 앱에서 "이 세트는 어떤 LLM" 표시용
+                models = {v: _set_models(lang_dir / v / "meta.yaml") for v in versions}
+                langs.append({"lang": lang_dir.name, "versions": versions, "models": models})
         if langs:
             works.append({"work": work_dir.name, "langs": langs})
     return works
@@ -131,6 +156,13 @@ def load_bundle(
     version: str | None = None,
 ) -> Bundle:
     lang_dir = Path(prompts_root) / work / lang
+    if not lang_dir.is_dir():
+        # 구표기(ko-jp)로 요청돼도 표준 폴더(ko-ja)를 찾고, 그 반대(옛 ko-jp 폴더)도 허용
+        std = normalize_lang(lang)
+        for alt in [std] + [k for k, v in LANG_ALIASES.items() if v == std]:
+            if (Path(prompts_root) / work / alt).is_dir():
+                lang_dir = Path(prompts_root) / work / alt
+                break
     vpath = resolve_version(lang_dir, version)
 
     meta_path = vpath / "meta.yaml"

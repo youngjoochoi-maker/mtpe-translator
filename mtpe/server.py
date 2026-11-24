@@ -26,7 +26,7 @@ from fastapi.responses import (
 )
 from starlette.middleware.sessions import SessionMiddleware
 
-from .bundle import Bundle, Step, list_bundles
+from .bundle import Bundle, Step, list_bundles, normalize_lang
 from .io_utils import read_text
 from .paths import data_root, resource_root
 from .pipeline import Pipeline
@@ -93,7 +93,9 @@ MODEL_PRESETS = [
     {"label": "Gemini 2.5 Pro", "model": "gemini/gemini-2.5-pro"},
     {"label": "Gemini 3.8 Flash (빠름·저렴)", "model": "gemini/gemini-3.8-flash"},
     {"label": "Gemini 2.5 Flash (빠름·저렴)", "model": "gemini/gemini-2.5-flash"},
-    # Anthropic — 최신 세대
+    # Anthropic — 최신 세대 (2026-11-20: Opus/Sonnet 5.5 추가, 중한 '아전가재고대당배방' 세트가 Opus 5.5 사용)
+    {"label": "Claude Opus 5.5", "model": "claude-opus-5-5"},
+    {"label": "Claude Sonnet 5.5", "model": "claude-sonnet-5-5"},
     {"label": "Claude Opus 5", "model": "claude-opus-5"},
     {"label": "Claude Sonnet 5", "model": "claude-sonnet-5"},
     {"label": "Claude Haiku 4.5 (빠름·저렴)", "model": "claude-haiku-4-5-20251001"},
@@ -195,7 +197,7 @@ def _set_run_font(run, name: str, size_pt: float) -> None:
 def _add_doc_paragraphs(doc, text: str, *, lang=None, work=None, episode=None) -> None:
     """번역문을 docx 문단으로 추가.
     - 공통: <center>…</center> 줄 → 태그 제거 + 가운데 정렬 + 볼드.
-    - 한일(ko-jp): 가이드 서식 반영.
+    - 한일(ko-ja): 가이드 서식 반영.
       · 상단 제목 블록(작품명[크게·볼드] / −ノベル版−[볼드] / 第N話[볼드, 한자릿수 전각]) 가운데.
       · 본문 양쪽정렬, 대사 ｢｣·말줄임표 …… 변환.
       · 끝에 본문 2줄 띄우고 「つづく」 우측정렬 + 1줄.
@@ -300,6 +302,50 @@ def _add_doc_paragraphs(doc, text: str, *, lang=None, work=None, episode=None) -
 
 def _load_config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def _resolve_run_model(requested: str | None, pipe) -> tuple[str | None, list[str]]:
+    """자동화 실행 모델 결정.
+    - 요청(배치지시서 '모델' 칸)에 값이 있으면 그 모델로 전 단계 강제.
+    - 비어 있으면 프롬프트 세트(meta.yaml)의 단계별 모델을 쓰고, 지정 없는 단계는 config 기본 모델.
+    반환: (run_iter 에 넘길 model_override[None=세트 모델 사용], 실제 쓰일 모델 목록)."""
+    default = _load_config().get("default_model") or "mock"
+    if requested:
+        return requested, [requested]
+    steps = list(getattr(pipe.bundle, "steps", []) or [])
+    if not any(getattr(st_, "model", None) for st_ in steps):
+        return default, [default]
+    used: list[str] = []
+    for st_ in steps:
+        m = getattr(st_, "model", None) or default
+        if m not in used:
+            used.append(m)
+    return None, used
+
+
+SET_MODEL = "__set__"   # 앱 '세트 지정 모델(단계별)' 선택값 — 자동화의 '지시서 모델 칸 비움'과 같은 동작
+
+
+def _app_model(requested: str | None, pipe) -> tuple[str | None, list[str], str]:
+    """앱(번역 탭·튜닝·평가표)에서 고른 모델 해석.
+    - '__set__': 프롬프트 세트의 단계별 모델 사용(지정 없는 단계는 config 기본 모델)
+    - 그 외: 그 모델로 전 단계 강제(기존 동작)
+    반환: (run_iter 에 넘길 model_override, 실제 쓰일 모델 목록, 표시·폴더명용 이름)."""
+    if requested != SET_MODEL:
+        m = requested or ""
+        return m, [m], m
+    override, used = _resolve_run_model(None, pipe)
+    return override, used, (override or "+".join(used))
+
+
+def _missing_keys(models: list[str]) -> list[str]:
+    """모델 목록 실행에 필요한데 서버 env 에 없는 API 키 이름들."""
+    out = []
+    for m in models:
+        need = required_key_for(m)
+        if need and not os.environ.get(need) and need not in out:
+            out.append(need)
+    return out
 
 
 def required_key_for(model: str) -> str | None:
@@ -473,18 +519,20 @@ async def translate(
                 CONFIG_PATH, work=work, lang=lang, version=version or None
             )
             b = pipe.bundle
-            need = required_key_for(model)
-            if need and not os.environ.get(need):
+            override, used, label = _app_model(model, pipe)
+            missing = _missing_keys(used)
+            if missing:
                 yield json.dumps({"type": "error",
-                    "message": f"{need} 가 설정되지 않았습니다. 상단에서 키를 저장하세요."}) + "\n"
+                    "message": f"{', '.join(missing)} 가 설정되지 않았습니다. 상단에서 키를 저장하세요."},
+                    ensure_ascii=False) + "\n"
                 return
 
             yield json.dumps({"type": "start", "work": b.work, "lang": b.lang,
-                "version": b.version, "model": model,
+                "version": b.version, "model": label,
                 "steps": [{"id": s.id, "name": s.name} for s in b.steps]},
                 ensure_ascii=False) + "\n"
 
-            for r in pipe.run_iter(source_text, glossary_text, model_override=model):
+            for r in pipe.run_iter(source_text, glossary_text, model_override=override):
                 yield json.dumps({"type": "step", "id": r.id, "name": r.name,
                     "model": r.model, "chars": len(r.output), "output": r.output},
                     ensure_ascii=False) + "\n"
@@ -573,7 +621,8 @@ def save_bundle(payload: dict = Body(...)) -> JSONResponse:
     try:
         work = _safe_seg(payload["work"])
         # 언어쌍·버전은 소문자로 통일(ko-EN / V1 등 대소문자 혼용 방지 → 평가표·번들 매칭 안정)
-        lang = _safe_seg(payload["lang"]).lower()
+        # 언어쌍은 ISO 639-1 표준 표기로 저장(구표기 ko-jp 입력 → ko-ja 폴더)
+        lang = normalize_lang(_safe_seg(payload["lang"]))
         version = _safe_seg(payload["version"]).lower()
     except (KeyError, ValueError) as e:
         return JSONResponse({"ok": False, "error": f"입력 오류: {e}"}, status_code=400)
@@ -761,10 +810,13 @@ def library(work: str) -> JSONResponse:
     if tb:
         sheets = _tb_sheets(tb)
         sel = _read_lib_cfg(work).get("tb_sheets")
+        from .io_utils import tb_sheet_matches
         tb_info = {
             "name": tb.name,
             "sheets": sheets,
-            "selected": (sel if sel is not None else sheets),
+            # 저장된 선택이 별칭(예: 인물)이어도 실제 탭(예: Characters)에 체크되도록 실제 탭 이름으로 변환
+            "selected": ([t for t in sheets if any(tb_sheet_matches(t, w) for w in sel)]
+                         if sel is not None else sheets),
         }
     return JSONResponse({
         "work": work,
@@ -806,7 +858,7 @@ def set_source_dir(work: str = Form(...), path: str = Form("")) -> JSONResponse:
 
 @app.post("/api/library/jp-title")
 def set_jp_title(work: str = Form(...), title: str = Form("")) -> JSONResponse:
-    """한일(ko-jp) 제목 블록에 쓸 '일본어 작품 제목'을 작품별로 저장."""
+    """한일(ko-ja) 제목 블록에 쓸 '일본어 작품 제목'을 작품별로 저장."""
     try:
         _safe_seg(work)
     except ValueError as e:
@@ -877,10 +929,8 @@ def tb_template(lang: str = "") -> StreamingResponse:
     lang = (lang or "").lower()
     is_zh = lang.startswith("zh")
     src_lbl, tgt_lbl = {
-        "ko-en": ("한국어", "영어"), "ko-jp": ("한국어", "일본어"), "zh-ko": ("중국어", "한국어"),
-    }.get(lang, ("원문", "번역"))
-    if lang == "ko-ja":
-        src_lbl, tgt_lbl = "한국어", "일본어"
+        "ko-en": ("한국어", "영어"), "ko-ja": ("한국어", "일본어"), "zh-ko": ("중국어", "한국어"),
+    }.get(normalize_lang(lang), ("원문", "번역"))
 
     wb = openpyxl.Workbook()
     bold = Font(bold=True)
@@ -994,10 +1044,13 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
             if not eids:
                 yield emit({"type": "error", "message": "선택된 회차가 없습니다."})
                 return
-            need = required_key_for(model)
-            if need and not os.environ.get(need):
+            # '__set__'(세트 지정 모델·단계별)이면 단계마다 세트 모델, 아니면 고른 모델로 전 단계
+            override, used, label = _app_model(
+                model, Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version))
+            missing = _missing_keys(used)
+            if missing:
                 yield emit({"type": "error",
-                            "message": f"{need} 가 설정되지 않았습니다. 상단에서 키를 저장하세요."})
+                            "message": f"{', '.join(missing)} 가 설정되지 않았습니다. 상단에서 키를 저장하세요."})
                 return
             tb = _tb_path(work)
             tb_text = _read_tb_text(work)
@@ -1005,10 +1058,11 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
             workers = min(concurrency, total)
             yield emit({"type": "run_start", "total": total,
                         "tb": (tb.name if tb else None), "concurrency": workers})
-            _log(f"■ 실행 시작 · {total}회차 · 동시 {workers}개 · {model}")
+            _log(f"■ 실행 시작 · {total}회차 · 동시 {workers}개 · {label}"
+                 + (" (세트 단계별 모델)" if model == SET_MODEL else ""))
             import re as _re_zip
             safe_work = _re_zip.sub(r'[\\/:*?"<>|]', "", str(work)).strip() or "WORK"
-            run_tag = _run_tag(model)
+            run_tag = _run_tag("+".join(m.split("/")[-1] for m in used))  # 단계별이면 모델들 이어서
             out_root = _work_dir(work) / "output" / run_tag
             out_root.mkdir(parents=True, exist_ok=True)
 
@@ -1016,7 +1070,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
             lock = _threading.Lock()
             totals = {"sec": 0.0, "in": 0, "out": 0, "cost": 0.0}
             saved_docs = []  # [(idx, stem, fname, path)] — 완료 시 자동 저장된 Word 파일들
-            llm = _mock_llm if (model == "mock") else None
+            llm = _mock_llm if used == ["mock"] else None
 
             def worker(idx: int, eid: str):
                 _set_ctx(Path(eid).stem)
@@ -1043,7 +1097,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                            "index": idx, "total": total, "version": b.version,
                            "steps": [{"id": s.id, "name": s.name} for s in b.steps]})
                     ep_sec = 0.0; ep_in = 0; ep_out = 0; ep_cost = 0.0
-                    for r in pipe.run_iter(source, tb_text, model_override=model, llm=llm):
+                    for r in pipe.run_iter(source, tb_text, model_override=override, llm=llm):
                         ep_sec += r.seconds; ep_in += r.in_tokens
                         ep_out += r.out_tokens; ep_cost += r.cost
                         q.put({"type": "step", "episode": eid, "id": r.id,
@@ -1169,6 +1223,9 @@ def estimate_run(payload: dict = Body(...)) -> JSONResponse:
     except Exception as e:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": f"설정 로드 실패: {e}"}, status_code=400)
     nsteps = max(1, len(pipe.bundle.steps))
+    # 단계마다 쓰일 모델('__set__'이면 세트 단계별 모델, 아니면 고른 모델 하나)
+    override, _used, label = _app_model(model, pipe)
+    step_models = [override or (st.model or pipe.default_model) for st in pipe.bundle.steps] or [label]
     glossary = _read_tb_text(work)  # 설정집(TB) — 실제 실행처럼 단계마다 재전송됨
     est_in = est_out = calls = 0
     read_ok = 0
@@ -1180,17 +1237,21 @@ def estimate_run(payload: dict = Body(...)) -> JSONResponse:
                 src = read_text(str(pp)); read_ok += 1
             except Exception:
                 src = ""
-        i, o, c = estimate_pipeline_usage(pipe, src, glossary, model)
+        i, o, c = estimate_pipeline_usage(pipe, src, glossary, step_models[0])
         est_in += i; est_out += o; calls += c
+    # 비용·속도: 토큰을 단계 수로 나눠 단계별 모델 단가·속도로 합산(모델 하나면 기존과 같음)
+    n_sm = len(step_models)
     cost = 0.0
     try:
         import litellm
-        pc, cc = litellm.cost_per_token(model=model, prompt_tokens=est_in, completion_tokens=est_out)
-        cost = float(pc or 0) + float(cc or 0)
+        for m in step_models:
+            pc, cc = litellm.cost_per_token(model=m, prompt_tokens=int(est_in / n_sm),
+                                            completion_tokens=int(est_out / n_sm))
+            cost += float(pc or 0) + float(cc or 0)
     except Exception:
         cost = 0.0
     # 시간: 호출당 지연(~2.5s) + 출력 토큰 처리량(~45토큰/s). 모델 속도에 따라 편차 큼.
-    est_seconds = int(calls * 2.5 + est_out / _model_tok_per_sec(model))
+    est_seconds = int(calls * 2.5 + sum((est_out / n_sm) / _model_tok_per_sec(m) for m in step_models))
     # 동시 실행이면 벽시계 시간은 대략 1/N (토큰·비용은 동일)
     _cc = _run_concurrency(payload)
     n_eps = max(1, len(payload.get("episodes", []) or []))
@@ -1256,7 +1317,7 @@ def automate_translate(request: Request, payload: dict = Body(...)) -> JSONRespo
     work = payload.get("work")
     lang = (payload.get("lang") or "").lower()
     version = payload.get("version") or None
-    model = payload.get("model") or _load_config().get("default_model") or "mock"
+    req_model = payload.get("model") or None   # 비우면 세트(meta)에 지정된 모델 사용
     episode = payload.get("episode")
     source = payload.get("source")
     glossary = payload.get("glossary")
@@ -1278,13 +1339,17 @@ def automate_translate(request: Request, payload: dict = Body(...)) -> JSONRespo
     # 설정집: 직접 전달 우선 → 없으면 작품 TB(회차 기반일 때)
     tb_text = glossary if glossary is not None else (_read_tb_text(work) if episode else "")
 
-    need = required_key_for(model)
-    if need and not os.environ.get(need):
-        return JSONResponse({"ok": False,
-            "error": f"{need} 가 서버에 설정되지 않았습니다(서버 .env 에 저장하세요)."}, status_code=400)
-
     try:
         pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"프롬프트 번들을 찾을 수 없습니다: {exc}"}, status_code=400)
+    model, used_models = _resolve_run_model(req_model, pipe)
+    missing = _missing_keys(used_models)
+    if missing:
+        return JSONResponse({"ok": False,
+            "error": f"{', '.join(missing)} 가 서버에 설정되지 않았습니다(서버 .env 에 저장하세요)."}, status_code=400)
+
+    try:
         llm = _mock_llm if model == "mock" else None
         steps = []
         for r in pipe.run_iter(src_text, tb_text, model_override=model, llm=llm):
@@ -1297,13 +1362,13 @@ def automate_translate(request: Request, payload: dict = Body(...)) -> JSONRespo
 
     saved = None
     if episode and payload.get("save", True):
-        outd = _work_dir(work) / "output" / _run_tag(payload.get("model") or "") / Path(episode).stem
+        outd = _work_dir(work) / "output" / _run_tag(payload.get("model") or "+".join(used_models)) / Path(episode).stem
         outd.mkdir(parents=True, exist_ok=True)
         (outd / "final.txt").write_text(final, encoding="utf-8")
         saved = str(outd / "final.txt")
 
     result = {"ok": True, "work": work, "lang": lang, "version": bver,
-              "episode": episode, "model": model, "final": final, "saved": saved}
+              "episode": episode, "model": " + ".join(used_models), "final": final, "saved": saved}
     if payload.get("include_steps", True):
         result["steps"] = steps
     return JSONResponse(result)
@@ -1460,14 +1525,18 @@ async def automate_tb(request: Request, work: str = Form(...), file: UploadFile 
     cfg = _read_lib_cfg(work)
     sheets_all = _tb_sheets(d / name)
     want = [s.strip() for s in (tb_sheets or "").split(",") if s.strip()]
-    missing = [s for s in want if s not in sheets_all]
+    # 탭 이름 별칭 인식: '인물,용어,호칭' 으로 적어도 Characters/Term Localizations 탭을 같은 탭으로 찾음
+    from .io_utils import tb_sheet_matches
+    missing = [s for s in want if not any(tb_sheet_matches(t, s) for t in sheets_all)]
     if want and not missing:
         cfg["tb_sheets"] = want
     else:
         cfg.pop("tb_sheets", None)
     _write_lib_cfg(work, cfg)
+    _sel = cfg.get("tb_sheets")
     return JSONResponse({"ok": True, "tb": name, "sheets": sheets_all,
-                         "selected": cfg.get("tb_sheets") or sheets_all,
+                         "selected": ([t for t in sheets_all if any(tb_sheet_matches(t, w) for w in _sel)]
+                                      if _sel else sheets_all),
                          "warning": (f"없는 시트 무시하고 전체 사용: {missing}" if missing else None),
                          "chars": len(_read_tb_text(work))})
 
@@ -1552,7 +1621,7 @@ def automate_batch_start(request: Request, payload: dict = Body(...)) -> JSONRes
     load_env_into_os()
     work = payload.get("work"); lang = (payload.get("lang") or "").lower()
     batch = payload.get("batch"); version = payload.get("version") or None
-    model = payload.get("model") or _load_config().get("default_model") or "mock"
+    req_model = payload.get("model") or None   # 비우면 세트(meta)에 지정된 모델 사용
     concurrency = _run_concurrency(payload)
     if not work or not lang or not batch:
         return JSONResponse({"ok": False, "error": "work, lang, batch 가 필요합니다."}, status_code=400)
@@ -1564,15 +1633,17 @@ def automate_batch_start(request: Request, payload: dict = Body(...)) -> JSONRes
     if not eids:
         return JSONResponse({"ok": False, "error": f"배치 '{batch}' 에 회차 파일이 없습니다. /api/automate/episodes 로 먼저 등록하세요."},
                             status_code=400)
-    need = required_key_for(model)
-    if need and not os.environ.get(need):
-        return JSONResponse({"ok": False, "error": f"{need} 가 서버 .env 에 없습니다."}, status_code=400)
     # 번들 확인(작품/언어/버전 오타를 시작 전에 잡음)
     try:
         pipe0 = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
         bver = pipe0.bundle.version
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"ok": False, "error": f"프롬프트 번들을 찾을 수 없습니다: {exc}"}, status_code=400)
+    model_override, used_models = _resolve_run_model(req_model, pipe0)
+    model = " + ".join(used_models)   # 상태·로그 표시용
+    missing = _missing_keys(used_models)
+    if missing:
+        return JSONResponse({"ok": False, "error": f"{', '.join(missing)} 가 서버 .env 에 없습니다."}, status_code=400)
     # 같은 작품·배치가 실행 중이면 중복 시작 막기
     with _BATCH_LOCK:
         for st0 in _BATCHES.values():
@@ -1588,7 +1659,9 @@ def automate_batch_start(request: Request, payload: dict = Body(...)) -> JSONRes
     tb_text = _read_tb_text(work)
     st = {
         "ok": True, "batch_id": batch_id, "work": work, "lang": lang, "batch": batch,
-        "version": bver, "model": model, "concurrency": min(concurrency, len(eids)),
+        "version": bver, "model": model, "model_override": model_override,
+        "model_source": ("지시서" if req_model else "세트(meta)"),
+        "concurrency": min(concurrency, len(eids)),
         "tb": (tb.name if tb else None), "tb_chars": len(tb_text),
         "tb_sheets": _read_lib_cfg(work).get("tb_sheets"),
         "status": "queued", "started_at": _dt.now().isoformat(timespec="seconds"),
@@ -1621,9 +1694,11 @@ def _batch_runner(st: dict, tb_text: str) -> None:
 
     work, lang, batch = st["work"], st["lang"], st["batch"]
     version = st["version"]; model = st["model"]
+    # model_override: None=세트 단계별 모델 사용(구버전 상태 파일은 model 을 그대로 강제)
+    override = st["model_override"] if "model_override" in st else model
     out_root = _batch_out_dir(work, batch); out_root.mkdir(parents=True, exist_ok=True)
     safe_work = _safe_name(work) or "WORK"
-    llm = _mock_llm if model == "mock" else None
+    llm = _mock_llm if override == "mock" else None
     lock = _threading.Lock()
     t0 = time.time()
     st["status"] = "running"; _batch_save(st)
@@ -1645,7 +1720,7 @@ def _batch_runner(st: dict, tb_text: str) -> None:
             source = read_text(str(src))
             pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
             sec = 0.0; tin = 0; tout = 0; cost = 0.0; steps = []; step_outputs = []
-            for r in pipe.run_iter(source, tb_text, model_override=model, llm=llm):
+            for r in pipe.run_iter(source, tb_text, model_override=override, llm=llm):
                 sec += r.seconds; tin += r.in_tokens; tout += r.out_tokens; cost += r.cost
                 steps.append({"id": r.id, "name": r.name, "chars": len(r.output),
                               "skipped": r.skipped, "error": r.error,
@@ -1830,10 +1905,13 @@ def tune(payload: dict = Body(...)) -> StreamingResponse:
             if not payload.get("steps"):
                 yield emit({"type": "error", "message": "단계가 없습니다."})
                 return
-            need = required_key_for(model)
-            if need and not os.environ.get(need):
+            # '__set__'이면 편집 중인 단계별 '사용 모델'로, 아니면 고른 모델로 전 단계
+            pipe, overrides = _build_tune_pipeline(payload)
+            override, used, label = _app_model(model, pipe)
+            missing = _missing_keys(used)
+            if missing:
                 yield emit({"type": "error",
-                            "message": f"{need} 가 설정되지 않았습니다. 번역 탭에서 키를 저장하세요."})
+                            "message": f"{', '.join(missing)} 가 설정되지 않았습니다. 번역 탭에서 키를 저장하세요."})
                 return
 
             raw_source = (payload.get("source") or "").strip()
@@ -1850,13 +1928,12 @@ def tune(payload: dict = Body(...)) -> StreamingResponse:
 
             # 설정집도 회차가 속한 작품 것을 우선 사용(없으면 프롬프트 세트 작품 것)
             tb_text = _read_tb_text(payload.get("episode_work") or payload.get("work")) or _read_tb_text(payload.get("work"))
-            pipe, overrides = _build_tune_pipeline(payload)
-            llm = _mock_llm if model == "mock" else None
+            llm = _mock_llm if used == ["mock"] else None
             from_step = int(payload.get("from_step") or 0)
             seed = payload.get("seed") or {}
 
-            yield emit({"type": "start", "from_step": from_step, "model": model})
-            for r in pipe.run_iter(source, tb_text, model_override=model, llm=llm,
+            yield emit({"type": "start", "from_step": from_step, "model": label})
+            for r in pipe.run_iter(source, tb_text, model_override=override, llm=llm,
                                    prompt_overrides=overrides, seed_artifacts=seed,
                                    start_from=from_step):
                 yield emit({"type": "step", "id": r.id, "name": r.name, "model": r.model,
@@ -1879,9 +1956,7 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
     from .evaluation.sheet import TEMPLATES, generate_files
 
     work = payload.get("work")
-    lang = (payload.get("lang") or "").lower()   # ko-EN 등 들어와도 ko-en 으로 매칭
-    if lang == "ko-ja":
-        lang = "ko-jp"   # 구표기 호환: 한일은 jp로 통일
+    lang = normalize_lang(payload.get("lang"))   # ko-EN → ko-en, 구표기 ko-jp → ko-ja(ISO 639-1)
     version = (payload.get("version") or "v1").lower()
     episode = payload.get("episode")
     mode = payload.get("output_mode", "single")
@@ -1891,7 +1966,7 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "작품/회차가 필요합니다."}, status_code=400)
     if lang not in TEMPLATES:
         return JSONResponse({"ok": False,
-            "error": f"'{lang}' 언어쌍은 평가표 템플릿이 없습니다. (한일 ko-jp / 한영 ko-en 만 지원)"},
+            "error": f"'{lang}' 언어쌍은 평가표 템플릿이 없습니다. (한일 ko-ja / 한영 ko-en 만 지원)"},
             status_code=400)
 
     ep_path = _episode_path(work, episode)
@@ -1905,6 +1980,17 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
         return JSONResponse({"ok": False,
             "error": "이 회차의 번역 결과(final.txt)가 없습니다. 먼저 번역하세요."}, status_code=400)
     mt = final_path.read_text(encoding="utf-8")
+
+    model_name = model
+    if model == SET_MODEL:
+        # 세트 단계별 모델: 문장 정렬은 최종 단계 모델로, 평가표 모델명 칸에는 쓰인 모델 전부
+        try:
+            _pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
+            _ov, _used, model_name = _app_model(model, _pipe)
+            _fin = next((st for st in _pipe.bundle.steps if st.is_final), _pipe.bundle.steps[-1])
+            model = _ov or _fin.model or _pipe.default_model
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"세트 지정 모델 확인 실패: {exc}"}, status_code=400)
 
     need = required_key_for(model)
     if model != "mock" and need and not os.environ.get(need):
@@ -1921,7 +2007,7 @@ def eval_sheet(payload: dict = Body(...)) -> JSONResponse:
         "work_title": payload.get("work_title", work),
         "language_pair": lang,
         "prompt_version": payload.get("prompt_version", version),
-        "model_name": model,
+        "model_name": model_name,
         "chapter_range": payload.get("chapter_range", Path(episode).stem),
         "extraction_date": payload.get("extraction_date") or date.today().isoformat(),
         "source_sentences": aligned["source_sentences"],

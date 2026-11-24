@@ -240,6 +240,8 @@
       <div><label>언어</label><select id="langSelect"></select></div>
       <div><label>버전</label><select id="versionSelect"></select></div>
     </div>
+    <!-- 선택한 프롬프트 세트의 지정 LLM 표시(세트 meta.yaml 의 단계별 model) -->
+    <div id="setModelNote" class="note" style="display:none; margin-top:8px;"></div>
 
     <h2 style="margin-top:20px;">3. 설정집 (TB)</h2>
     <div class="tbrow"><span id="tbName" class="pill">없음</span>
@@ -254,7 +256,7 @@
     <div class="hint"><a href="/api/tb-template" id="tbTplLink" download>📄 양식 템플릿 내려받기 (.xlsx)</a> — 헤더·예시가 채워진 파일을 받아 그대로 작성하세요.</div>
     <div id="tbSheets"></div>
     <div class="tbrow" style="margin-top:12px; flex-wrap:wrap; align-items:center; gap:6px;">
-      <span class="fhelp" style="width:100%;">🇯🇵 <b>일본어 작품 제목</b> — 한일(ko-jp) 워드 상단 제목 블록에 사용합니다 (작품명 · −ノベル版− · 第N話, 볼드·가운데). 회차 번호는 자동. 다른 언어에는 영향 없어요.</span>
+      <span class="fhelp" style="width:100%;">🇯🇵 <b>일본어 작품 제목</b> — 한일(ko-ja) 워드 상단 제목 블록에 사용합니다 (작품명 · −ノベル版− · 第N話, 볼드·가운데). 회차 번호는 자동. 다른 언어에는 영향 없어요.</span>
       <input type="text" id="jpTitle" placeholder="예) 病弱令嬢は執着皇太子に溺愛されてます" style="flex:1; min-width:220px;">
       <button class="sec" id="jpTitleSave" type="button">저장</button>
     </div>
@@ -320,9 +322,13 @@
       <div class="hint" style="margin:0 0 8px;">새 작품명과 언어쌍을 넣고 <b>[+ 새 작품 만들기]</b>를 누르면 그 작품이 <b>v1으로 즉시 생성</b>되고(번역 탭에도 바로 보임) 빈 5단계 편집이 시작됩니다. 이어서 내용을 채우고 <b>[현재 버전 덮어쓰기]</b>로 저장하세요.</div>
       <div class="bar">
         <div><label>새 작품명</label><input type="text" id="mNewWork" placeholder="예: 대소저" /></div>
-        <div><label>새 언어쌍</label><input type="text" id="mNewLang" placeholder="예: zh-ko / ko-en" /></div>
+        <div><label>새 언어쌍</label><input type="text" id="mNewLang" placeholder="예: zh-ko / ko-en / ko-ja" /></div>
+        <div><label>기본 프롬프트</label><select id="mNewBase"></select></div>
+        <div><label>기본 LLM</label><select id="mNewModel"></select></div>
         <div><button class="runbtn-sm" id="mNewTemplate">+ 새 작품 만들기 (v1)</button></div>
       </div>
+      <div class="hint" id="mNewBaseHint" style="margin:6px 0 0;">기본 프롬프트를 고르면 그 세트의 STEP1~5 내용·공통 규칙·단계 연결·출력 추출을 복사해서 새 세트를 시작합니다. 내용 없이 시작하려면 '빈 템플릿'을 고르세요.</div>
+      <div class="hint" id="mNewModelHint" style="margin:6px 0 0;">기본 LLM은 이 세트의 5단계 모두에 지정됩니다. 번역 탭에서 이 세트를 고르면 자동 선택되고, 자동화(지시서 모델 칸 비움)도 이 모델로 추출합니다. 나중에 단계별 '사용 모델' 칸에서 바꿀 수 있습니다.</div>
     </div>
 
     <h2 style="margin-top:18px;">이 세트 정보 <span class="fhelp" style="font-weight:400;">(불러온 번들의 기본 정보)</span></h2>
@@ -390,8 +396,20 @@ function currentModel() {
   const sel = $("modelSelect").value;
   return sel === "__custom__" ? $("modelCustom").value.trim() : sel;
 }
+// 지금 선택으로 실행할 때 필요한 키들('세트 지정 모델(단계별)'이면 세트에 쓰인 모델 전부)
+function requiredKeysForCurrent() {
+  const cur = currentModel();
+  let ms = [cur];
+  if (cur === "__set__") { ms = currentSetModels(); if (!ms.length) ms = [DEFAULTS.model]; }
+  return [...new Set(ms.map(requiredKeyFor).filter(Boolean))];
+}
+// 키 저장 대상: 미설정 키 우선
+function keyTargetEnv() {
+  const envs = requiredKeysForCurrent();
+  return envs.find(e => !KEYSTATUS[e]) || envs[0] || null;
+}
 function refreshKeyUI() {
-  const env = requiredKeyFor(currentModel());
+  const env = keyTargetEnv();
   $("keyName").textContent = env || "-";
   const ok = env && KEYSTATUS[env];
   $("keyStatus").innerHTML = env
@@ -416,7 +434,8 @@ async function bootstrap() {
   }
 
   const ms = $("modelSelect");
-  ms.innerHTML = MODELS.map(m => `<option value="${m.model}">${m.label} — ${m.model}</option>`).join("")
+  ms.innerHTML = `<option value="__set__">세트 지정 모델 (단계별)</option>`
+    + MODELS.map(m => `<option value="${m.model}">${m.label} — ${m.model}</option>`).join("")
     + `<option value="__custom__">직접 입력…</option>`;
   if (DEFAULTS.model && MODELS.some(m => m.model === DEFAULTS.model)) ms.value = DEFAULTS.model;
 
@@ -426,6 +445,8 @@ async function bootstrap() {
   onWorkChange();
   refreshKeyUI();
   populateTuneModels();
+  populateNewModel();
+  populateNewBase();
 }
 function onWorkChange() {
   const work = $("workSelect").value;
@@ -442,19 +463,95 @@ function onLangChange() {
   const l = b && b.langs.find(x => x.lang === lang);
   const vs = $("versionSelect");
   const vers = l ? l.versions : [];
-  vs.innerHTML = vers.map((v,i) => `<option value="${v}">${v}${i===0?" (최신)":""}</option>`).join("");
+  vs.innerHTML = vers.map((v,i) => {
+    const ms = (l && l.models && l.models[v]) || [];
+    const tag = ms.length ? " · " + ms.map(modelShort).join(", ") : "";
+    return `<option value="${v}">${v}${i===0?" (최신)":""}${tag}</option>`;
+  }).join("");
+  applySetModel();
+}
+
+/* ===== 프롬프트 세트 지정 모델(LLM) =====
+   세트 meta.yaml 에 단계별 model 이 있으면: 모델 1개면 그 모델, 여러 개면 '세트 지정 모델(단계별, __set__)'을
+   자동 선택하고 안내줄에 표시. __set__ 은 서버에서 단계별 모델로 실행(자동화의 '지시서 모델 칸 비움'과 동일).
+   사용자가 다른 모델로 바꾸면 경고(그 모델 하나로 전 단계 실행됨). */
+function modelLabel(id) { const m = (MODELS || []).find(x => x.model === id); return m ? m.label : (id || "-"); }
+function modelShort(id) { return modelLabel(id).replace(/\s*\(.*?\)\s*/g, "").replace(/^OpenAI\s+/, ""); }
+function setModelsFor(work, lang, version) {
+  const b = BUNDLES.find(x => x.work === work);
+  const l = b && b.langs.find(x => x.lang === lang);
+  return (l && l.models && l.models[version]) || [];
+}
+function currentSetModels() {
+  return setModelsFor($("workSelect").value, $("langSelect").value, $("versionSelect").value);
+}
+function selectModel(m) {
+  if (m === "__set__" || MODELS.some(x => x.model === m)) {
+    $("modelSelect").value = m; $("modelCustom").style.display = "none";
+  } else {
+    $("modelSelect").value = "__custom__"; $("modelCustom").value = m; $("modelCustom").style.display = "block";
+  }
+}
+// '세트 지정 모델 (단계별)' 항목 이름에 이 세트의 모델들을 표시
+function updateSetOption(ms) {
+  const o = [...$("modelSelect").options].find(x => x.value === "__set__"); if (!o) return;
+  o.textContent = ms.length
+    ? `세트 지정 모델 (단계별: ${ms.map(modelShort).join(" · ")})`
+    : `세트 지정 모델 (지정 없음 → 기본 ${modelShort(DEFAULTS.model)})`;
+}
+function applySetModel() {
+  const ms = currentSetModels();
+  updateSetOption(ms);
+  if (ms.length > 1) selectModel("__set__");          // 단계별로 모델이 다르면 단계별 실행
+  else if (ms.length === 1) selectModel(ms[0]);
+  else if ($("modelSelect").value === "__set__" && DEFAULTS.model) selectModel(DEFAULTS.model);
+  refreshKeyUI();
+  updateSetModelNote();
+}
+function updateSetModelNote() {
+  const el = $("setModelNote"); if (!el) return;
+  const ms = currentSetModels(), cur = currentModel();
+  const b = (t) => `<b>${esc(t)}</b>`;
+  if (!$("versionSelect").value) { el.style.display = "none"; return; }
+  if (cur === "__set__") {
+    el.className = "note ok";
+    el.innerHTML = ms.length
+      ? `📌 세트 지정 모델로 단계마다 따로 추출합니다: ${ms.map(m => b(modelLabel(m))).join(", ")}`
+        + `<br><span class="fhelp">모델이 지정되지 않은 단계는 기본 모델 ${esc(modelLabel(DEFAULTS.model))}. 자동화(지시서 모델 칸 비움)와 같은 방식입니다.</span>`
+      : `📌 이 세트에는 지정 모델이 없어 전 단계를 기본 모델 ${b(modelLabel(DEFAULTS.model))}(으)로 추출합니다.`;
+  } else if (!ms.length) {
+    el.className = "note";
+    el.innerHTML = `📌 이 프롬프트 세트에는 지정 모델이 없습니다. 위 1번에서 고른 ${b(modelLabel(cur))}(으)로 추출합니다.`
+      + `<br><span class="fhelp">자동화(n8n)는 지시서 모델 칸이 비어 있으면 기본 모델 ${esc(modelLabel(DEFAULTS.model))}을 씁니다.</span>`;
+  } else if (ms.length === 1 && ms[0] === cur) {
+    el.className = "note ok";
+    el.innerHTML = `📌 이 프롬프트 세트의 지정 모델: ${b(modelLabel(ms[0]))} <span class="fhelp">(${esc(ms[0])})</span> — 자동 선택됨`
+      + `<br><span class="fhelp">자동화(n8n)도 지시서 모델 칸이 비어 있으면 이 모델로 추출합니다.</span>`;
+  } else if (ms.length === 1) {
+    el.className = "note";
+    el.innerHTML = `⚠ 이 세트의 지정 모델은 ${b(modelLabel(ms[0]))}인데, 지금 ${b(modelLabel(cur))}이(가) 선택되어 있습니다. 이대로 실행하면 ${b(modelLabel(cur))}(으)로 추출됩니다. `
+      + `<button type="button" class="sec" id="setModelReset" style="margin-top:6px;">지정 모델로 되돌리기</button>`;
+    $("setModelReset").onclick = () => { selectModel(ms[0]); refreshKeyUI(); updateSetModelNote(); };
+  } else {
+    el.className = "note";
+    el.innerHTML = `⚠ 이 세트는 단계별로 다른 모델(${ms.map(m => b(modelLabel(m))).join(", ")})이 지정되어 있는데, 지금 ${b(modelLabel(cur))} 하나로 전 단계를 실행하게 되어 있습니다. `
+      + `<button type="button" class="sec" id="setModelReset" style="margin-top:6px;">단계별 지정 모델로 되돌리기</button>`;
+    $("setModelReset").onclick = () => { selectModel("__set__"); refreshKeyUI(); updateSetModelNote(); };
+  }
+  el.style.display = "block";
 }
 
 $("modelSelect").addEventListener("change", () => {
   $("modelCustom").style.display = $("modelSelect").value === "__custom__" ? "block" : "none";
-  refreshKeyUI();
+  refreshKeyUI(); updateSetModelNote();
 });
-$("modelCustom").addEventListener("input", refreshKeyUI);
+$("modelCustom").addEventListener("input", () => { refreshKeyUI(); updateSetModelNote(); });
+$("versionSelect").addEventListener("change", applySetModel);
 $("workSelect").addEventListener("change", onWorkChange);
 $("langSelect").addEventListener("change", onLangChange);
 
 $("saveKey").addEventListener("click", async () => {
-  const env = requiredKeyFor(currentModel());
+  const env = keyTargetEnv();
   const val = $("keyValue").value.trim();
   if (!env) return alert("모델을 먼저 선택하세요.");
   if (!val) return alert("키를 입력하세요.");
@@ -554,7 +651,7 @@ async function loadLibrary() {
     box.querySelectorAll(".epdel").forEach(b => b.addEventListener("click", async (ev) => {
       ev.preventDefault(); ev.stopPropagation();
       const id = b.dataset.id;
-      if (!confirm(`업로드한 회차 '${id}' 를 삭제할까요?`)) return;
+      if (!await uiConfirm(`업로드한 회차 '${id}' 를 삭제할까요?`)) return;
       const r = await fetch(`/api/library/episode?work=${encodeURIComponent($("workSelect").value)}&episode=${encodeURIComponent(id)}`, { method:"DELETE" });
       const d = await r.json();
       if (d.ok === false) return alert(d.error || "삭제 실패");
@@ -618,7 +715,7 @@ $("tbUpload").addEventListener("click", async () => {
   toast("설정집 업로드됨: " + ((d.tb && d.tb.name) || f.name) + " (작품: " + $("workSelect").value + ")");
 });
 $("tbDel").addEventListener("click", async () => {
-  if (!confirm("현재 설정집을 삭제할까요?")) return;
+  if (!await uiConfirm("현재 설정집을 삭제할까요?")) return;
   const r = await fetch(`/api/library/tb?work=${encodeURIComponent($("workSelect").value)}`, { method:"DELETE" });
   const d = await r.json();
   if (d.ok === false) return alert(d.error || "삭제 실패");
@@ -833,16 +930,16 @@ $("runBtn").addEventListener("click", async () => {
   if (!eids.length) return alert("번역할 회차를 선택하세요.");
   const model = currentModel();
   if (!model) return alert("모델을 선택/입력하세요.");
-  const env = requiredKeyFor(model);
-  if (env && !KEYSTATUS[env]) {
+  const _missEnv = requiredKeysForCurrent().filter(e => !KEYSTATUS[e]);
+  if (_missEnv.length) {
     $("runNote").style.display = "block";
-    $("runNote").textContent = `${env} 가 미설정입니다. 위에서 키를 저장한 뒤 다시 시도하세요.`;
+    $("runNote").textContent = `${_missEnv.join(", ")} 가 미설정입니다. 위에서 키를 저장한 뒤 다시 시도하세요.`;
     return;
   }
   $("runNote").style.display = "none";
   const _tbName = ($("tbName").textContent || "").trim();
   if (!_tbName || _tbName === "없음") {
-    if (!confirm("이 작품에는 설정집(TB)이 없습니다.\n설정집이 없으면 한자 병기·역주가 제대로 안 나올 수 있어요.\n\n그래도 이대로 진행할까요?")) return;
+    if (!await uiConfirm("이 작품에는 설정집(TB)이 없습니다.\n설정집이 없으면 한자 병기·역주가 제대로 안 나올 수 있어요.\n\n그래도 이대로 진행할까요?")) return;
   }
   $("runBtn").disabled = true; $("runBtn").textContent = "번역 중…";
   $("episodes").innerHTML = "";
@@ -1022,7 +1119,9 @@ $("mLang").addEventListener("change", mOnLang);
 
 $("mNew").addEventListener("click", () => {
   const box = $("mNewBox");
-  box.style.display = box.style.display === "none" ? "flex" : "none";
+  // block: 입력줄 아래로 안내 문구가 차례로 쌓이게(가로 flex 면 안내가 좁은 열로 끼어 보임)
+  box.style.display = box.style.display === "none" ? "block" : "none";
+  if (box.style.display !== "none") { populateNewBase(); populateNewModel(); }
 });
 
 // 이 단계에 넣을 수 있는 자료(체크박스). idx 는 0-기준 단계 위치.
@@ -1041,6 +1140,31 @@ function inputSummaryText(inputs) {
 function updateCardSummary(el) {
   const inputs = [...el.querySelectorAll('.s-in:checked')].map(c=>c.value);
   el.querySelector('.inSummary').textContent = inputSummaryText(inputs);
+}
+
+/* 단계별 '사용 모델' 드롭다운: 프리셋 모델 + 지정 안 함 + 직접 입력(프리셋에 없는 모델 ID 보존) */
+function _isPresetModel(m) { return !!m && (MODELS || []).some(x => x.model === m && x.model !== "mock"); }
+function stepModelOptions(cur) {
+  cur = cur || "";
+  const opts = [`<option value="" ${cur ? "" : "selected"}>지정 안 함 (실행할 때 고른 모델)</option>`]
+    .concat((MODELS || []).filter(m => m.model !== "mock").map(m =>
+      `<option value="${esc(m.model)}" ${m.model === cur ? "selected" : ""}>${m.label} — ${esc(m.model)}</option>`));
+  opts.push(`<option value="__custom__" ${cur && !_isPresetModel(cur) ? "selected" : ""}>직접 입력…</option>`);
+  return opts.join("");
+}
+function stepModelValue(el) {
+  const v = el.querySelector(".s-model").value;
+  return v === "__custom__" ? el.querySelector(".s-model-custom").value.trim() : v;
+}
+function updateStepModelHint(el) {
+  const hint = el.querySelector(".s-model-hint"); if (!hint) return;
+  const m = stepModelValue(el);
+  if (!m) {
+    hint.textContent = `지정 안 함: 기본 모델 ${modelLabel(DEFAULTS.model)}을 씁니다. (번역 탭에서 모델 하나를 직접 고르면 그 모델로 전 단계 실행)`;
+    return;
+  }
+  const env = requiredKeyFor(m);
+  hint.textContent = (env && KEYSTATUS[env] === false) ? `⚠ ${env} 키가 아직 저장되지 않았습니다.` : "";
 }
 
 function stepCard(s, idx) {
@@ -1071,8 +1195,10 @@ function stepCard(s, idx) {
     </div>
     <div class="mfield mgrid">
       <div>
-        <div class="flabel">② 사용 모델 <span class="fhelp">— 비우면 번역 화면에서 고른 기본 모델</span></div>
-        <input type="text" class="s-model" placeholder="비워두기 (기본 모델 사용)" value="${esc(s.model)}">
+        <div class="flabel">② 사용 모델 <span class="fhelp">— 이 단계를 추출할 LLM</span></div>
+        <select class="s-model">${stepModelOptions(s.model)}</select>
+        <input type="text" class="s-model-custom" placeholder="모델 ID 직접 입력 (예: gpt-5.6)" value="${esc(_isPresetModel(s.model) ? "" : s.model)}" style="margin-top:6px;${(s.model && !_isPresetModel(s.model)) ? "" : "display:none;"}">
+        <div class="fhelp s-model-hint" style="margin-top:4px;"></div>
       </div>
       <div>
         <div class="flabel">③ 출력 처리 <span class="fhelp">(대부분 끄고/한 곳만 — 안 만져도 됨)</span></div>
@@ -1105,6 +1231,14 @@ function stepCard(s, idx) {
     adv.style.display = show ? "block" : "none";
     el.querySelector(".toggleAdv").textContent = show ? "접기 ▴" : "직접 고르기 ▾";
   });
+  const _mSel = el.querySelector(".s-model"), _mCustom = el.querySelector(".s-model-custom");
+  _mSel.addEventListener("change", () => {
+    _mCustom.style.display = _mSel.value === "__custom__" ? "" : "none";
+    if (_mSel.value === "__custom__") _mCustom.focus();
+    updateStepModelHint(el);
+  });
+  _mCustom.addEventListener("input", () => updateStepModelHint(el));
+  updateStepModelHint(el);
   const _emSel = el.querySelector(".s-extract-mode");
   if (_emSel) _emSel.addEventListener("change", () => {
     const fld = el.querySelector(".s-extract-field");
@@ -1123,7 +1257,7 @@ function collectSteps() {
   return [...document.querySelectorAll("#mSteps .mstep")].map((el, i) => ({
     name: el.querySelector(".s-name").value.trim() || `${i+1}단계`,
     inputs: [...el.querySelectorAll(".s-in:checked")].map(c => c.value),
-    model: el.querySelector(".s-model").value.trim(),
+    model: stepModelValue(el),
     extract: (function(){ const m=el.querySelector(".s-extract-mode").value; if(m==="tag:o")return "tag:o"; if(m==="json"){const f=el.querySelector(".s-extract-field").value.trim(); return f?("json:"+f):"tag:o";} return ""; })(),
     final: el.querySelector(".s-final").checked,
     content: el.querySelector(".s-content").value,
@@ -1143,7 +1277,9 @@ async function mLoadBundle(work, lang, version) {
   $("mNotes").value = d.notes || "";
   $("mHouseStyle").value = d.house_style || "";
   renderSteps(d.steps);
-  $("mTarget").textContent = `편집 중: ${d.work} / ${d.lang} / ${d.version} — STEP1~${d.steps.length} 프롬프트`;
+  const _ms = [...new Set((d.steps || []).map(s => s.model).filter(Boolean))];
+  $("mTarget").textContent = `편집 중: ${d.work} / ${d.lang} / ${d.version} — STEP1~${d.steps.length} 프롬프트`
+    + (_ms.length ? ` · 지정 모델: ${_ms.map(modelLabel).join(", ")}` : " · 지정 모델 없음(기본 모델)");
   await mRefreshNextVer();
   tuneOutputs = {}; tunePrompts = {}; tuneByEp = {}; tuneCurEp = "";
   populateTuneEpisodes();
@@ -1156,7 +1292,7 @@ $("mLoad").addEventListener("click", () => {
 $("mDelVer").addEventListener("click", async () => {
   const work = $("mWork").value, lang = $("mLang").value, version = $("mVersion").value;
   if (!work || !lang || !version) return alert("삭제할 작품/언어/버전을 선택하세요.");
-  if (!confirm(`'${work} / ${lang} / ${version}' 버전을 삭제할까요?\n저장된 프롬프트가 사라지며 되돌릴 수 없습니다.`)) return;
+  if (!await uiConfirm(`'${work} / ${lang} / ${version}' 버전을 삭제할까요?\n저장된 프롬프트가 사라지며 되돌릴 수 없습니다.`)) return;
   const r = await fetch(`/api/bundle?work=${encodeURIComponent(work)}&lang=${encodeURIComponent(lang)}&version=${encodeURIComponent(version)}`, { method:"DELETE" });
   const d = await r.json();
   if (d.ok === false) return alert(d.error || "삭제 실패");
@@ -1170,35 +1306,155 @@ $("mDelVer").addEventListener("click", async () => {
   mPopulateWorks();         // 관리 탭 드롭다운 갱신
 });
 
+// 새 세트의 '기본 프롬프트' 목록: 빈 템플릿 + 기존 세트(언어쌍별 묶음, 범용 먼저)
+let _mNewBaseTouched = false;
+const _baseKey = (w, l, v) => [w, l, v].map(encodeURIComponent).join("|");
+const _baseParse = (k) => k.split("|").map(decodeURIComponent);
+function baseModels(k) {
+  if (!k || k === "__blank__") return [];
+  const [w, l, v] = _baseParse(k);
+  return setModelsFor(w, l, v);
+}
+function populateNewBase() {
+  const sel = $("mNewBase"); if (!sel) return;
+  const keep = sel.value;
+  const opts = [];
+  BUNDLES.forEach(b => (b.langs || []).forEach(l => (l.versions || []).forEach((v, i) => {
+    const ms = (l.models && l.models[v]) || [];
+    opts.push({ key: _baseKey(b.work, l.lang, v), lang: l.lang, generic: /범용/.test(b.work) ? 1 : 0,
+      text: `${b.work} / ${l.lang} / ${v}${i === 0 ? " (최신)" : ""}${ms.length ? " · " + ms.map(modelShort).join(", ") : ""}` });
+  })));
+  const langs = [...new Set(opts.map(o => o.lang))].sort();
+  sel.innerHTML = `<option value="">— 기본 프롬프트 선택 —</option><option value="__blank__">빈 템플릿 (내용 없이 시작)</option>`
+    + langs.map(lg => `<optgroup label="${esc(lg)}">` + opts.filter(o => o.lang === lg)
+        .sort((a, b) => (b.generic - a.generic) || a.text.localeCompare(b.text, "ko"))
+        .map(o => `<option value="${esc(o.key)}">${esc(o.text).replace(/</g, "&lt;")}</option>`).join("") + `</optgroup>`).join("");
+  if (keep && [...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+// 언어쌍을 입력하면 그 언어쌍의 '범용' 세트(최신)가 하나뿐일 때 미리 선택
+function suggestNewBase() {
+  if (_mNewBaseTouched) return;
+  const lang = $("mNewLang").value.trim().toLowerCase().replace(/^ko[-_]jp$/, "ko-ja");
+  const gens = BUNDLES.filter(b => /범용/.test(b.work)).flatMap(b => (b.langs || [])
+    .filter(l => l.lang === lang && (l.versions || []).length).map(l => _baseKey(b.work, l.lang, l.versions[0])));
+  $("mNewBase").value = gens.length === 1 ? gens[0] : "";
+  updateNewBaseHint();
+}
+function updateNewBaseHint() {
+  const k = $("mNewBase").value, hint = $("mNewBaseHint");
+  if (k && k !== "__blank__") {
+    const [w, l, v] = _baseParse(k);
+    hint.innerHTML = `📋 <b>${esc(w)} / ${esc(l)} / ${esc(v)}</b>의 STEP1~5 내용·공통 규칙·단계 연결·출력 추출을 복사해서 시작합니다. 원본 세트는 바뀌지 않습니다.`;
+  } else if (k === "__blank__") {
+    hint.textContent = "빈 5단계 템플릿으로 시작합니다(내용 없음, 원문+설정집+직전 단계 자동 연결).";
+  } else {
+    hint.textContent = "기본 프롬프트를 고르면 그 세트의 STEP1~5 내용·공통 규칙·단계 연결·출력 추출을 복사해서 새 세트를 시작합니다. 내용 없이 시작하려면 '빈 템플릿'을 고르세요.";
+  }
+}
+$("mNewBase").addEventListener("change", () => {
+  _mNewBaseTouched = !!$("mNewBase").value;
+  const k = $("mNewBase").value;
+  // 언어쌍이 비어 있으면 기본 프롬프트의 언어쌍으로 채움
+  if (k && k !== "__blank__" && !$("mNewLang").value.trim()) $("mNewLang").value = _baseParse(k)[1];
+  updateNewBaseHint();
+  suggestNewModel();
+});
+
+// 새 세트의 '기본 LLM' 목록 (모의 응답 제외 + 지정 안 함)
+let _mNewModelTouched = false;
+function populateNewModel() {
+  const sel = $("mNewModel"); if (!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = `<option value="">— 기본 LLM 선택 —</option>`
+    + (MODELS || []).filter(m => m.model !== "mock")
+        .map(m => `<option value="${esc(m.model)}">${m.label}</option>`).join("")
+    + `<option value="__none__">지정 안 함 (앱 기본 모델: ${esc(modelLabel(DEFAULTS.model))})</option>`;
+  if (keep) sel.value = keep;
+}
+// 같은 언어쌍의 기존 세트들이 모두 한 모델을 쓰면 그 모델을 미리 선택(사용자가 직접 고른 뒤엔 건드리지 않음)
+function suggestNewModel() {
+  const lang = $("mNewLang").value.trim().toLowerCase().replace(/^ko[-_]jp$/, "ko-ja");
+  const bm = baseModels($("mNewBase") ? $("mNewBase").value : "");
+  if (!_mNewModelTouched && bm.length === 1 && [...$("mNewModel").options].some(o => o.value === bm[0])) {
+    $("mNewModel").value = bm[0];
+    $("mNewModelHint").innerHTML = `💡 기본 프롬프트 세트의 지정 모델(<b>${esc(modelLabel(bm[0]))}</b>)로 미리 골라 두었습니다. 다른 모델이 필요하면 바꾸세요.`;
+    return;
+  }
+  const used = new Set();
+  BUNDLES.forEach(b => (b.langs || []).forEach(l => {
+    if (l.lang !== lang) return;
+    Object.values(l.models || {}).forEach(ms => (ms.length ? ms : ["__none__"]).forEach(m => used.add(m)));
+  }));
+  const hint = $("mNewModelHint");
+  if (!_mNewModelTouched && used.size === 1) {
+    const m = [...used][0];
+    if ([...$("mNewModel").options].some(o => o.value === m)) {
+      $("mNewModel").value = m;
+      hint.innerHTML = `💡 기존 <b>${esc(lang)}</b> 세트들이 쓰는 모델(<b>${esc(modelLabel(m))}</b>)로 미리 골라 두었습니다. 다른 모델이 필요하면 바꾸세요.`;
+      return;
+    }
+  }
+  if (!_mNewModelTouched) $("mNewModel").value = "";
+  hint.textContent = "기본 LLM은 이 세트의 5단계 모두에 지정됩니다. 번역 탭에서 이 세트를 고르면 자동 선택되고, 자동화(지시서 모델 칸 비움)도 이 모델로 추출합니다. 나중에 단계별 '사용 모델' 칸에서 바꿀 수 있습니다.";
+}
+$("mNewModel").addEventListener("change", () => { _mNewModelTouched = !!$("mNewModel").value; });
+
 // 언어쌍은 입력 즉시 소문자로 (ko-EN → ko-en)
 $("mNewLang").addEventListener("input", (e) => {
   const p = e.target.selectionStart; e.target.value = e.target.value.toLowerCase();
   try { e.target.setSelectionRange(p, p); } catch (_) {}
+  suggestNewBase();
+  suggestNewModel();
 });
 $("mNewTemplate").addEventListener("click", async () => {
-  const work = $("mNewWork").value.trim(), lang = $("mNewLang").value.trim().toLowerCase();
+  // 언어쌍은 ISO 639-1 표기(일본어 = ja). 구표기 ko-jp 는 ko-ja 로 바꿔 저장
+  const work = $("mNewWork").value.trim(),
+        lang = $("mNewLang").value.trim().toLowerCase().replace(/^ko[-_]jp$/, "ko-ja");
   if (!work || !lang) return alert("새 작품명과 언어쌍을 입력하세요.");
   // 이미 있는 작품·언어면 덮어쓰기 사고 방지
   const dup = BUNDLES.some(b => b.work.normalize('NFC') === work.normalize('NFC')
     && (b.langs || []).some(l => l.lang === lang));
   if (dup) return alert(`이미 있는 작품·언어입니다: ${work} / ${lang}\n위에서 [불러오기]로 편집하거나 다른 이름을 쓰세요.`);
-  // 기본: 1단계는 원문+설정집, 이후 단계는 원문+설정집+직전 단계 결과(자동 연결)
-  const names = ["1단계","2단계","3단계","4단계","5단계"];
-  const tpl = names.map((nm, i) => ({
-    id: i+1, name: nm,
-    inputs: i === 0 ? ["source","glossary"] : ["source","glossary","step"+i],
-    final: i === names.length-1, model:"", extract:"", content:"",
-  }));
+  const pickedModel = $("mNewModel").value;
+  if (!pickedModel) return alert("이 세트의 기본 LLM을 선택하세요.\n(지정하지 않으려면 '지정 안 함'을 고르세요)");
+  const setModel = pickedModel === "__none__" ? "" : pickedModel;
+  const baseKey = $("mNewBase").value;
+  if (!baseKey) return alert("기본 프롬프트를 선택하세요.\n(내용 없이 시작하려면 '빈 템플릿'을 고르세요)");
+  const _LN = { ko:"한국어", ja:"일본어", en:"영어", zh:"중국어" };
+  const [_s, _t] = lang.split("-");
+  let tpl, base = null;
+  if (baseKey === "__blank__") {
+    // 빈 템플릿: 1단계는 원문+설정집, 이후 단계는 원문+설정집+직전 단계 결과(자동 연결)
+    const names = ["1단계","2단계","3단계","4단계","5단계"];
+    tpl = names.map((nm, i) => ({
+      id: i+1, name: nm,
+      inputs: i === 0 ? ["source","glossary"] : ["source","glossary","step"+i],
+      final: i === names.length-1, model: setModel, extract:"", content:"",
+    }));
+  } else {
+    const [bw, bl, bv] = _baseParse(baseKey);
+    if (bl !== lang && !await uiConfirm(`기본 프롬프트의 언어쌍(${bl})과 새 언어쌍(${lang})이 다릅니다.\n그래도 이 프롬프트를 복사해서 시작할까요?`)) return;
+    const r = await fetch(`/api/bundle?work=${encodeURIComponent(bw)}&lang=${encodeURIComponent(bl)}&version=${encodeURIComponent(bv)}`);
+    if (!r.ok) return alert("기본 프롬프트를 불러오지 못했습니다: " + bw + " / " + bl + " / " + bv);
+    base = await r.json(); base._key = `${bw} / ${bl} / ${bv}`;
+    // 내용·단계 연결·출력 추출·최종 단계는 그대로 복사, 모델은 이번에 고른 기본 LLM으로
+    tpl = (base.steps || []).map(st => ({ ...st, model: setModel }));
+  }
   mState = { work, lang, version:"v1" };
-  $("mSrcLang").value = "auto"; $("mTgtLang").value = "한국어"; $("mNotes").value = "";
-  $("mHouseStyle").value = "";
+  // 원문/목표 언어: 같은 언어쌍의 기본 프롬프트면 그 값, 아니면 언어쌍에서 채움(ko-ja → 한국어/일본어 등)
+  if (base && base.lang === lang) { $("mSrcLang").value = base.source_lang; $("mTgtLang").value = base.target_lang; }
+  else { $("mSrcLang").value = _LN[_s] || "auto"; $("mTgtLang").value = _LN[_t] || "한국어"; }
+  $("mNotes").value = base ? `기본 프롬프트: ${base._key} 에서 복사` : "";
+  $("mHouseStyle").value = base ? (base.house_style || "") : "";
   renderSteps(tpl);
   $("mNewBox").style.display = "none";
-  $("mNewWork").value = ""; $("mNewLang").value = "";
+  $("mNewWork").value = ""; $("mNewLang").value = ""; $("mNewModel").value = ""; _mNewModelTouched = false;
+  $("mNewBase").value = ""; _mNewBaseTouched = false; updateNewBaseHint();
   tuneOutputs = {}; tunePrompts = {}; tuneByEp = {}; tuneCurEp = "";
   populateTuneEpisodes();
   await mSave("v1");   // 즉시 v1 생성 → 번역 탭 드롭다운에도 바로 보임
-  mMsg(`새 작품 생성됨: ${work} / ${lang} / v1 — 이제 5단계 내용을 채우고 [현재 버전 덮어쓰기]로 저장하세요.`, true);
+  mMsg(`새 작품 생성됨: ${work} / ${lang} / v1 · 기본 프롬프트: ${base ? base._key : "빈 템플릿"} · 기본 LLM: ${setModel ? modelLabel(setModel) : "지정 안 함(앱 기본 모델)"} — `
+    + (base ? "복사된 프롬프트를 작품에 맞게 고친 뒤 [현재 버전 덮어쓰기]로 저장하세요." : "이제 5단계 내용을 채우고 [현재 버전 덮어쓰기]로 저장하세요."), true);
 });
 
 $("mAddStep").addEventListener("click", () => {
@@ -1232,7 +1488,9 @@ async function mSave(version) {
   if (d.ok) {
     mState.version = d.version;
     mMsg(`저장됨: ${d.work} / ${d.lang} / ${d.version}`, true);
-    $("mTarget").textContent = `편집 중: ${d.work} / ${d.lang} / ${d.version} — STEP1~${document.querySelectorAll('#mSteps .mstep').length} 프롬프트`;
+    const _sm = [...new Set(collectSteps().map(s => s.model).filter(Boolean))];
+    $("mTarget").textContent = `편집 중: ${d.work} / ${d.lang} / ${d.version} — STEP1~${document.querySelectorAll('#mSteps .mstep').length} 프롬프트`
+      + (_sm.length ? ` · 지정 모델: ${_sm.map(modelLabel).join(", ")}` : " · 지정 모델 없음(기본 모델)");
     await refreshBundles();
     mPopulateWorks();
     await mRefreshNextVer();
@@ -1240,9 +1498,9 @@ async function mSave(version) {
     mMsg("저장 실패: " + (d.error || ""), false);
   }
 }
-$("mSaveOver").addEventListener("click", () => {
+$("mSaveOver").addEventListener("click", async () => {
   if (!mState.version) return alert("대상 버전이 없습니다.");
-  if (confirm(`${mState.work}/${mState.lang}/${mState.version} 를 덮어쓸까요?`)) mSave(mState.version);
+  if (await uiConfirm(`${mState.work}/${mState.lang}/${mState.version} 를 덮어쓸까요?`)) mSave(mState.version);
 });
 $("mSaveNew").addEventListener("click", async () => {
   const v = $("mNextVer").textContent.trim();
@@ -1271,7 +1529,8 @@ let tuneCurEp = "";     // 현재 실행/표시 중 회차
 function populateTuneModels() {
   const sel = $("tuneModel");
   if (!sel) return;
-  sel.innerHTML = (MODELS || []).map(m => `<option value="${m.model}">${m.label}</option>`).join("");
+  sel.innerHTML = `<option value="__set__">단계별 '사용 모델' 그대로</option>`
+    + (MODELS || []).map(m => `<option value="${m.model}">${m.label}</option>`).join("");
   sel.value = "mock";
 }
 async function populateTuneEpisodes() {
@@ -1387,6 +1646,34 @@ async function refreshBundles() {
 }
 
 bootstrap();
+</script>
+<!-- 화면 안 확인/알림 창: 일부 내장 브라우저(앱 미리보기 패널 등)는 confirm()/alert() 를 막아
+     '취소'로 처리하므로, 어디서든 동작하도록 페이지 안에서 직접 띄운다. -->
+<div id="uiDlg" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.45); align-items:center; justify-content:center; padding:16px;">
+  <div style="background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:12px; max-width:440px; width:100%; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,.3);">
+    <div id="uiDlgMsg" style="white-space:pre-wrap; line-height:1.5; margin-bottom:16px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="sec" id="uiDlgCancel">취소</button>
+      <button id="uiDlgOk">확인</button>
+    </div>
+  </div>
+</div>
+<script>
+function _uiDialog(msg, withCancel) {
+  return new Promise(resolve => {
+    const box = document.getElementById("uiDlg");
+    document.getElementById("uiDlgMsg").textContent = String(msg);
+    const ok = document.getElementById("uiDlgOk"), cancel = document.getElementById("uiDlgCancel");
+    cancel.style.display = withCancel ? "" : "none";
+    const done = v => { box.style.display = "none"; ok.onclick = cancel.onclick = null; document.removeEventListener("keydown", onKey); resolve(v); };
+    const onKey = e => { if (e.key === "Escape") done(false); else if (e.key === "Enter") { e.preventDefault(); done(true); } };
+    ok.onclick = () => done(true); cancel.onclick = () => done(false);
+    document.addEventListener("keydown", onKey);
+    box.style.display = "flex"; ok.focus();
+  });
+}
+function uiConfirm(msg) { return _uiDialog(msg, true); }
+window.alert = function (msg) { _uiDialog(msg, false); };
 </script>
 </body>
 </html>
