@@ -1113,7 +1113,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                     except Exception as _e:  # noqa: BLE001 — 이전 결과 파일이 열려 있어 잠긴 경우
                         _log(f"⚠ final.txt 저장 실패(파일 열려 있음?) · {str(_e)[:120]} — 결과는 화면에 표시됨")
                     # 완료 즉시 Word(.docx) 자동 저장 — 창을 닫아도 결과가 남도록
-                    doc_name = f"{safe_work}_{Path(eid).stem}_{run_tag.split('_',2)[0]}_{run_tag.split('_',2)[1]}.docx"
+                    doc_name = f"{_out_base(safe_work, Path(eid).stem)}_{run_tag.split('_',2)[0]}_{run_tag.split('_',2)[1]}.docx"
                     try:
                         import docx as _docx
                         _d = _docx.Document()
@@ -1393,6 +1393,17 @@ _BATCH_ROOT_NAME = "_batches"   # works/_batches/<batch_id>.json 인덱스(작�
 
 def _safe_name(s: str) -> str:
     return re.sub(r'[\\/:*?"<>|]', "", str(s or "")).strip()
+
+
+def _out_base(safe_work: str, stem: str) -> str:
+    """결과 파일명 앞부분 '작품명_회차'. 원문 파일명이 이미 작품명으로 시작하면 작품명을 다시 붙이지 않는다.
+    (예: 권총지오작의비_EP342 → '권총지오작의비_EP342', 1화 → '란가_1화'). 맥 자모 분리(NFD) 이름도 같게 본다."""
+    import unicodedata as _ud
+    w = _ud.normalize("NFC", str(safe_work or "")).strip()
+    s = _ud.normalize("NFC", str(stem or "")).strip()
+    if w and s.startswith(w):
+        return s
+    return f"{safe_work}_{stem}"
 
 
 def _batch_ep_dir(work: str, batch: str) -> Path:
@@ -1736,7 +1747,7 @@ def _batch_runner(st: dict, tb_text: str) -> None:
                     step_outputs, ensure_ascii=False, indent=1), encoding="utf-8")
             except Exception:  # noqa: BLE001
                 pass
-            doc_name = f"{safe_work}_{stem}.docx"
+            doc_name = f"{_out_base(safe_work, stem)}.docx"
             try:
                 import docx as _docx
                 _d = _docx.Document()
@@ -1827,10 +1838,10 @@ def automate_batch_file(request: Request, batch_id: str, episode: str, kind: str
     outd = _batch_out_dir(st["work"], st["batch"]) / Path(episode).stem
     if kind == "txt":
         p = outd / "final.txt"; media = "text/plain; charset=utf-8"
-        dl = f"{_safe_name(st['work'])}_{Path(episode).stem}.txt"
+        dl = f"{_out_base(_safe_name(st['work']), Path(episode).stem)}.txt"
     elif kind == "steps":
         p = outd / "steps.json"; media = "application/json"
-        dl = f"{_safe_name(st['work'])}_{Path(episode).stem}_steps.json"
+        dl = f"{_out_base(_safe_name(st['work']), Path(episode).stem)}_steps.json"
     else:
         if not ep.get("docx"):
             return JSONResponse({"ok": False, "error": "docx 가 없습니다(txt 로 받으세요)."}, status_code=404)
@@ -2081,7 +2092,7 @@ def export_docx(payload: dict = Body(...)) -> JSONResponse:
     stem = Path(episode).stem
     safe_work = _re.sub(r'[\\/:*?"<>|]', "", str(work)).strip() or "WORK"
     from datetime import datetime as _dt
-    fname = f"{safe_work}_{stem}_{_dt.now():%Y%m%d_%H%M}.docx"
+    fname = f"{_out_base(safe_work, stem)}_{_dt.now():%Y%m%d_%H%M}.docx"
     try:
         out_dir = _latest_episode_dir(work, _safe_seg(stem)) or (_work_dir(work) / "output" / _run_tag("manual") / _safe_seg(stem))
     except ValueError as e:
@@ -2147,7 +2158,7 @@ def export_zip(payload: dict = Body(...)) -> JSONResponse:
             stem = Path(str(it.get("episode", ""))).stem or f"회차{n+1}"
             text = it.get("text") or ""
             safe_stem = _re.sub(r'[\\/:*?"<>|]', "", stem).strip() or f"회차{n+1}"
-            member = f"{safe_work}_{safe_stem}"
+            member = _out_base(safe_work, safe_stem)
             if fmt == "txt":
                 zf.writestr(member + ".txt", text)
             else:
