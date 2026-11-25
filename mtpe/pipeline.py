@@ -147,7 +147,33 @@ def _auto_clean(text: str) -> str:
     return stripped if stripped and stripped != text.strip() else text
 
 
+_ESC_MAP = {"n": "\n", "r": "", "t": "\t", '"': '"', "'": "'", "\\": "\\", "/": "/"}
+
+
+def _undo_double_escape(text: str) -> str:
+    """모델이 번역문을 한 번 더 이스케이프해 보낸 경우를 풀어 준다.
+    (예: JSON 값 안에 '\\n' 을 넣어, 파싱 후에도 줄바꿈이 '\\n' 글자로 남고 대사 따옴표가 '\\"' 로 남는 경우
+     → Word 로 저장하면 전체가 한 문단이 됨.)
+    실제 줄바꿈보다 '\\n' 글자가 더 많을 때만(3개 이상) 손대므로, 정상 번역문은 그대로 둔다."""
+    if not text or "\\" not in text:
+        return text
+    lit = text.count("\\n")
+    if lit < 3 or lit <= text.count("\n"):
+        return text
+    out = re.sub(r'\\(["\'\\/nrt])', lambda m: _ESC_MAP[m.group(1)], text)
+    return out.strip()
+
+
 def extract_output(text: str, rule: str | None) -> str:
+    """extract 규칙을 적용하고, 번역문 추출(json/자동)일 때는 이중 이스케이프도 풀어 준다.
+    분석용 tag: 추출(1단계 JSON 등)은 건드리지 않는다."""
+    out = _extract_output_raw(text, rule)
+    if rule and rule.startswith("tag:"):
+        return out
+    return _undo_double_escape(out)
+
+
+def _extract_output_raw(text: str, rule: str | None) -> str:
     """extract 규칙 적용.
 
     'tag:NAME'  → <NAME>...</NAME> 안의 내용만 반환.
