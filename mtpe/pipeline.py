@@ -386,6 +386,20 @@ class Pipeline:
             # 작품별 공통 규칙(없으면 빈 문자열 → 주입되지 않음)
             "house_style": self.bundle.house_style,
         }
+        # 이번 회차 원문에 나온 TB 항목만 모아 설정집 맨 앞에 '필수 용어' 블록으로 붙인다(전체 TB 는 그대로 유지).
+        self.tb_digest_count = 0
+        if glossary and glossary.strip():
+            try:
+                from .io_utils import tb_episode_digest
+                digest, n = tb_episode_digest(glossary, source, self.bundle.source_lang,
+                                              self.bundle.target_lang)
+                if n:
+                    artifacts["glossary"] = digest + "\n\n" + glossary
+                    self.tb_digest_count = n
+                    from .logbuf import log as _log
+                    _log(f"TB 필수 용어 {n}개 추출(이번 회차 원문 대조)")
+            except Exception:  # noqa: BLE001 — 실패해도 전체 TB 로 그대로 진행
+                pass
         if seed_artifacts:
             artifacts.update({k: v for k, v in seed_artifacts.items() if v is not None})
         self.final_output = ""
