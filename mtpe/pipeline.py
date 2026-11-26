@@ -331,6 +331,7 @@ class Pipeline:
         self.default_model = config["default_model"]
         self.input_labels = config.get("input_labels", {})
         self.final_output: str = ""
+        self.truncated_steps: list[int] = []
 
     @classmethod
     def from_config(
@@ -406,6 +407,7 @@ class Pipeline:
         last_output = ""
         last_nonempty = ""  # 빈 응답/빈 단계 시 최종을 직전 정상 결과로 대체하기 위함
         truncated_ids: list[int] = []  # 길이 제한으로 끝에서 잘린 단계들(경고 배너용)
+        self.truncated_steps = truncated_ids  # 배치 자동 점검(postcheck)이 재추출 여부 판단에 사용
 
         for step in self.bundle.steps:
             if start_from and step.id < start_from:

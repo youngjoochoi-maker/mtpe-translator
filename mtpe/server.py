@@ -30,6 +30,7 @@ from .bundle import Bundle, Step, list_bundles, normalize_lang
 from .io_utils import read_text
 from .paths import data_root, resource_root
 from .pipeline import Pipeline
+from . import postcheck as _postcheck
 
 ROOT = Path(__file__).resolve().parent.parent
 RESOURCE_ROOT = resource_root()          # 번들된 읽기전용 리소스(config/web/기본 prompts)
@@ -302,6 +303,106 @@ def _add_doc_paragraphs(doc, text: str, *, lang=None, work=None, episode=None) -
 
 def _load_config() -> dict:
     return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def postcheck_settings(lang: str) -> dict | None:
+    """배치 자동 점검·재추출 설정(config.yaml 'postcheck'). 이 언어쌍에 안 쓰면 None."""
+    try:
+        pc = (_load_config() or {}).get("postcheck") or {}
+    except Exception:  # noqa: BLE001
+        return None
+    langs = [normalize_lang(x) for x in (pc.get("langs") or [])]
+    if not pc.get("enabled", True) or normalize_lang(lang) not in langs:
+        return None
+    return {"max_retries": max(0, int(pc.get("max_retries", 1)))}
+
+
+def _run_with_postcheck(attempt, lang: str, *, can_retry: bool = True, cancelled=lambda: False) -> dict:
+    """회차 1개를 attempt() 로 추출하고, 자동 점검에 걸리면 같은 회차를 다시 추출한 뒤 정리한다.
+
+    attempt() 는 {"final", "truncated", "sec", "tin", "tout", "cost", ...} 를 돌려주는 함수(1회 추출).
+    반환: {"tries": [시도들], "best": 고른 시도, "final": 정리된 최종본, "note": 확인 필요 문구, "info": 기록용 요약}
+    이 언어쌍에 점검을 안 쓰면 1번만 추출하고 그대로 돌려준다(final = 원래 최종본)."""
+    from .logbuf import log as _log
+    pc = postcheck_settings(lang)
+    tries = [attempt()]
+    if not pc:
+        return {"tries": tries, "best": tries[0], "final": tries[0]["final"], "note": "", "info": None}
+    tries[0]["issues"] = _postcheck.inspect(tries[0]["final"], tries[0]["truncated"])
+    while (tries[-1]["issues"].needs_retry and len(tries) <= pc["max_retries"]
+           and can_retry and not cancelled()):
+        _log(f"⟳ 자동 재추출 {len(tries)}/{pc['max_retries']} · 사유: {tries[-1]['issues'].summary()}")
+        try:
+            t = attempt()
+        except Exception as _re:  # noqa: BLE001 — 재추출 실패 시 앞 결과로 진행
+            _log(f"⚠ 재추출 실패, 앞 결과 사용 · {str(_re)[:160]}")
+            break
+        t["issues"] = _postcheck.inspect(t["final"], t["truncated"])
+        tries.append(t)
+    best = min(tries, key=lambda t: t["issues"].rank())
+    final = _postcheck.clean(best["final"])
+    if not _postcheck.has_target_text(final):
+        raise RuntimeError("번역문이 비었거나 원문 그대로입니다(자동 재추출 후에도).")
+    bi = best["issues"]
+    used = tries.index(best) + 1
+    if len(tries) > 1:
+        _log(f"⟳ 재추출 결과: {len(tries)}개 중 {used}번째 사용"
+             + (f" · 남은 문제: {bi.summary()}" if bi.needs_retry else " · 문제 없음"))
+    left = []
+    if bi.truncated or bi.warning_line:
+        left.append(f"출력 잘림({', '.join(f'STEP{i}' for i in bi.truncated) or '단계 미상'})"
+                    " — 번역 끝부분 확인 필요")
+    if bi.untranslated:
+        left.append(f"번역 안 된 원문 줄 {bi.untranslated}개를 자동으로 지움 — 번역 누락 확인 필요")
+    info = {"tries": len(tries), "used": used, "first": tries[0]["issues"].summary(),
+            "left": bi.summary(), "cleaned": final != best["final"],
+            "extra_cost": round(sum(t["cost"] for t in tries if t is not tries[0]), 4)}
+    return {"tries": tries, "best": best, "final": final, "note": "; ".join(left), "info": info}
+
+
+_HISTORY_LOCK = __import__("threading").Lock()
+_HISTORY_NAME = "자동점검_기록.csv"
+
+
+def _postcheck_history(work: str, via: str, run_name: str, episode: str, res: dict) -> None:
+    """재추출했거나 확인이 필요한 회차를 작품 폴더의 '자동점검_기록.csv' 에 한 줄씩 남긴다(엑셀로 열림).
+    문제 없던 회차·제목 아래 빈 줄만 정리한 회차는 남기지 않는다."""
+    info = res.get("info")
+    if not info or (info["tries"] == 1 and not res.get("note")):
+        return
+    import csv
+    from datetime import datetime as _dt
+    path = _work_dir(work) / _HISTORY_NAME
+    row = [_dt.now().strftime("%Y-%m-%d %H:%M"), via, run_name, Path(episode).stem,
+           info["first"] or "-", info["tries"] - 1, f"{info['used']}번째",
+           info["left"] or "없음", res.get("note") or "", f"{info['extra_cost']:.2f}"]
+    try:
+        with _HISTORY_LOCK:
+            new = not path.exists()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8-sig" if new else "utf-8", newline="") as f:
+                w = csv.writer(f)
+                if new:
+                    w.writerow(["시각", "실행", "실행폴더", "회차", "처음 결과 문제", "재추출 횟수",
+                                "사용한 결과", "남은 문제(정리 전)", "확인 필요", "추가 비용(USD)"])
+                w.writerow(row)
+    except Exception as exc:  # noqa: BLE001 — 기록 실패가 번역을 막으면 안 됨
+        from .logbuf import log as _log
+        _log(f"⚠ 자동점검 기록 저장 실패 · {str(exc)[:120]}")
+
+
+def _save_postcheck_files(outd: Path, res: dict) -> None:
+    """정리 전 원본(final_raw.txt)·쓰지 않은 시도의 단계별 결과(steps_tryN.json)를 결과 폴더에 보관."""
+    best = res["best"]
+    try:
+        if res["final"] != best["final"]:
+            (outd / "final_raw.txt").write_text(best["final"], encoding="utf-8")
+        for k, t in enumerate(res["tries"], 1):
+            if t is not best and t.get("step_outputs") is not None:
+                (outd / f"steps_try{k}.json").write_text(json.dumps(
+                    t["step_outputs"], ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _resolve_run_model(requested: str | None, pipe) -> tuple[str | None, list[str]]:
@@ -1096,28 +1197,50 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                     q.put({"type": "episode_start", "episode": eid,
                            "index": idx, "total": total, "version": b.version,
                            "steps": [{"id": s.id, "name": s.name} for s in b.steps]})
-                    ep_sec = 0.0; ep_in = 0; ep_out = 0; ep_cost = 0.0
-                    for r in pipe.run_iter(source, tb_text, model_override=override, llm=llm):
-                        ep_sec += r.seconds; ep_in += r.in_tokens
-                        ep_out += r.out_tokens; ep_cost += r.cost
-                        q.put({"type": "step", "episode": eid, "id": r.id,
-                               "name": r.name, "model": r.model,
-                               "chars": len(r.output), "output": r.output,
-                               "skipped": r.skipped, "error": r.error,
-                               "seconds": round(r.seconds, 2), "in_tokens": r.in_tokens,
-                               "out_tokens": r.out_tokens, "cost": r.cost})
+                    def attempt(pipe=None) -> dict:
+                        # 1회 추출. 단계 결과는 화면으로 바로 보냄(재추출이면 같은 단계 칸이 새 결과로 바뀜).
+                        pipe = pipe or Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
+                        a = {"sec": 0.0, "tin": 0, "tout": 0, "cost": 0.0, "events": [], "step_outputs": []}
+                        for r in pipe.run_iter(source, tb_text, model_override=override, llm=llm):
+                            a["sec"] += r.seconds; a["tin"] += r.in_tokens
+                            a["tout"] += r.out_tokens; a["cost"] += r.cost
+                            ev_step = {"type": "step", "episode": eid, "id": r.id,
+                                       "name": r.name, "model": r.model,
+                                       "chars": len(r.output), "output": r.output,
+                                       "skipped": r.skipped, "error": r.error,
+                                       "seconds": round(r.seconds, 2), "in_tokens": r.in_tokens,
+                                       "out_tokens": r.out_tokens, "cost": r.cost}
+                            a["events"].append(ev_step); q.put(ev_step)
+                            a["step_outputs"].append({"id": r.id, "name": r.name, "model": r.model,
+                                                      "output": r.output})
+                        a["final"] = pipe.final_output
+                        a["truncated"] = list(getattr(pipe, "truncated_steps", []) or [])
+                        return a
+
+                    # 자동 점검·재추출(중한): 문제 있으면 그 회차만 한 번 더 추출하고 정리. 화면 알림 없이 기록만 남김.
+                    _first = [pipe]
+                    res = _run_with_postcheck(lambda: attempt(_first.pop() if _first else None),
+                                              lang, can_retry=llm is None)
+                    tries, best, final_text = res["tries"], res["best"], res["final"]
+                    if best is not tries[-1]:  # 앞 시도를 쓰면 화면의 단계 칸도 그 결과로 되돌림
+                        for _ev in best["events"]:
+                            q.put(_ev)
+                    ep_sec = sum(t["sec"] for t in tries); ep_in = sum(t["tin"] for t in tries)
+                    ep_out = sum(t["tout"] for t in tries); ep_cost = sum(t["cost"] for t in tries)
                     outd = out_root / Path(eid).stem
                     outd.mkdir(parents=True, exist_ok=True)
                     try:
-                        (outd / "final.txt").write_text(pipe.final_output, encoding="utf-8")
+                        (outd / "final.txt").write_text(final_text, encoding="utf-8")
                     except Exception as _e:  # noqa: BLE001 — 이전 결과 파일이 열려 있어 잠긴 경우
                         _log(f"⚠ final.txt 저장 실패(파일 열려 있음?) · {str(_e)[:120]} — 결과는 화면에 표시됨")
+                    _save_postcheck_files(outd, res)
+                    _postcheck_history(work, "앱", run_tag, eid, res)
                     # 완료 즉시 Word(.docx) 자동 저장 — 창을 닫아도 결과가 남도록
                     doc_name = f"{_out_base(safe_work, Path(eid).stem)}_{run_tag.split('_',2)[0]}_{run_tag.split('_',2)[1]}.docx"
                     try:
                         import docx as _docx
                         _d = _docx.Document()
-                        _add_doc_paragraphs(_d, pipe.final_output, lang=lang, work=work, episode=eid)
+                        _add_doc_paragraphs(_d, final_text, lang=lang, work=work, episode=eid)
                         _d.save(str(outd / doc_name))
                         with lock:
                             saved_docs.append((idx, Path(eid).stem, doc_name, str(outd / doc_name)))
@@ -1127,7 +1250,7 @@ def run_episodes(payload: dict = Body(...)) -> StreamingResponse:
                         totals["sec"] += ep_sec; totals["in"] += ep_in
                         totals["out"] += ep_out; totals["cost"] += ep_cost
                     q.put({"type": "episode_final", "episode": eid, "index": idx,
-                           "output": pipe.final_output,
+                           "output": final_text,
                            "saved": str(outd / "final.txt"),
                            "seconds": round(ep_sec, 2), "in_tokens": ep_in,
                            "out_tokens": ep_out, "cost": ep_cost})
@@ -1729,29 +1852,47 @@ def _batch_runner(st: dict, tb_text: str) -> None:
                 src = p2
             ep["status"] = "running"; _batch_save(st)
             source = read_text(str(src))
-            pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
-            sec = 0.0; tin = 0; tout = 0; cost = 0.0; steps = []; step_outputs = []
-            for r in pipe.run_iter(source, tb_text, model_override=override, llm=llm):
-                sec += r.seconds; tin += r.in_tokens; tout += r.out_tokens; cost += r.cost
-                steps.append({"id": r.id, "name": r.name, "chars": len(r.output),
-                              "skipped": r.skipped, "error": r.error,
-                              "seconds": round(r.seconds, 1), "cost": r.cost})
-                step_outputs.append({"id": r.id, "name": r.name, "model": r.model,
-                                     "output": r.output})
+
+            def attempt() -> dict:
+                pipe = Pipeline.from_config(CONFIG_PATH, work=work, lang=lang, version=version)
+                a = {"sec": 0.0, "tin": 0, "tout": 0, "cost": 0.0, "steps": [], "step_outputs": []}
+                for r in pipe.run_iter(source, tb_text, model_override=override, llm=llm):
+                    a["sec"] += r.seconds; a["tin"] += r.in_tokens
+                    a["tout"] += r.out_tokens; a["cost"] += r.cost
+                    a["steps"].append({"id": r.id, "name": r.name, "chars": len(r.output),
+                                       "skipped": r.skipped, "error": r.error,
+                                       "seconds": round(r.seconds, 1), "cost": r.cost})
+                    a["step_outputs"].append({"id": r.id, "name": r.name, "model": r.model,
+                                              "output": r.output})
+                a["final"] = pipe.final_output
+                a["truncated"] = list(getattr(pipe, "truncated_steps", []) or [])
+                return a
+
+            # 자동 점검·재추출(postcheck): 번역 안 된 원문 줄·본문 빈 줄·출력 잘림이 있으면 그 회차만 다시 추출.
+            # 여러 번 돌렸으면 문제가 가장 적은 결과를 고르고, 마지막에 자동 정리(그 줄들 삭제)를 한다.
+            res = _run_with_postcheck(attempt, lang, can_retry=llm is None,
+                                      cancelled=lambda: bool(st.get("_cancel")))
+            tries, best, final, note = res["tries"], res["best"], res["final"], res["note"]
+            if res["info"]:
+                ep["postcheck"] = {k: v for k, v in res["info"].items() if k != "extra_cost"}
+            sec = sum(t["sec"] for t in tries); tin = sum(t["tin"] for t in tries)
+            tout = sum(t["tout"] for t in tries); cost = sum(t["cost"] for t in tries)
             stem = Path(name).stem
             outd = out_root / stem; outd.mkdir(parents=True, exist_ok=True)
-            (outd / "final.txt").write_text(pipe.final_output, encoding="utf-8")
-            # 단계별 결과도 보관(재검토·비교용)
+            (outd / "final.txt").write_text(final, encoding="utf-8")
+            # 단계별 결과도 보관(재검토·비교용). 정리 전 원본·쓰지 않은 시도도 함께.
             try:
                 (outd / "steps.json").write_text(json.dumps(
-                    step_outputs, ensure_ascii=False, indent=1), encoding="utf-8")
+                    best["step_outputs"], ensure_ascii=False, indent=1), encoding="utf-8")
             except Exception:  # noqa: BLE001
                 pass
+            _save_postcheck_files(outd, res)
+            _postcheck_history(work, "n8n 배치", f"{batch} ({st['batch_id']})", name, res)
             doc_name = f"{_out_base(safe_work, stem)}.docx"
             try:
                 import docx as _docx
                 _d = _docx.Document()
-                _add_doc_paragraphs(_d, pipe.final_output, lang=lang, work=work, episode=name)
+                _add_doc_paragraphs(_d, final, lang=lang, work=work, episode=name)
                 _d.save(str(outd / doc_name))
                 ep["docx"] = doc_name
             except Exception as exc:  # noqa: BLE001
@@ -1759,8 +1900,10 @@ def _batch_runner(st: dict, tb_text: str) -> None:
                 ep["docx"] = None
             ep["txt"] = "final.txt"
             ep.update({"status": "done", "seconds": round(sec, 1), "in_tokens": tin,
-                       "out_tokens": tout, "cost": round(cost, 4), "steps": steps,
-                       "chars": len(pipe.final_output)})
+                       "out_tokens": tout, "cost": round(cost, 4), "steps": best["steps"],
+                       "chars": len(final)})
+            if note:
+                ep["note"] = note
             with lock:
                 st["totals"]["seconds"] += sec; st["totals"]["in_tokens"] += tin
                 st["totals"]["out_tokens"] += tout; st["totals"]["cost"] += cost
@@ -1782,6 +1925,12 @@ def _batch_runner(st: dict, tb_text: str) -> None:
     st["totals"]["seconds"] = round(st["totals"]["seconds"], 1)
     n_fail = sum(1 for e in st["episodes"] if e["status"] == "failed")
     n_done = sum(1 for e in st["episodes"] if e["status"] == "done")
+    # 자동 재추출 뒤에도 남은 확인 사항(잘림 등)은 n8n 이 시트 '오류메시지'·슬랙에 싣는 st.error 로 전달.
+    # (n8n 은 st.error 가 있으면 그것만 쓰므로 실패 회차 사유도 함께 넣는다)
+    notes = [f"{e['name']}: 확인 필요 — {e['note']}" for e in st["episodes"] if e.get("note")]
+    if notes and not st.get("error"):
+        fails = [f"{e['name']}: {e.get('error') or ''}" for e in st["episodes"] if e["status"] != "done"]
+        st["error"] = " | ".join(fails + notes)
     if st.get("_cancel"):
         st["status"] = "cancelled"
     elif n_fail == 0:
